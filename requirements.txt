@@ -1,0 +1,16 @@
+# DavyAgent — Python dependencies
+# Install with: pip install -r requirements.txt
+#
+# Requires Python >= 3.11
+
+# ── Core library + all its deps ────────────────
+# Installs everything declared in pyproject.toml:
+#   openai, openai-agents, pydantic-settings,
+#   httpx, mcp, mcp-server-git, python-dotenv …
+-e .
+
+# ── Optional: web search backends ──────────────
+# Uncomment whichever backends you want to use.
+# duckduckgo-search>=6
+# tavily-python
+# exa-py

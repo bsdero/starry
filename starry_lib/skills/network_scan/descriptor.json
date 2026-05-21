@@ -1,0 +1,27 @@
+{
+  "type": "function",
+  "function": {
+    "name": "network_scan",
+    "description": "Scan a network target for live hosts and open ports. Accepts a single host, IP range, or CIDR block. Returns a structured list of discovered hosts with their open ports and service versions.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "Host, IP, or CIDR to scan (e.g. '192.168.1.0/24', '10.0.0.1', 'hostname.local')."
+        },
+        "ports": {
+          "type": "string",
+          "description": "Comma-separated port list or range to probe (e.g. '22,80,443' or '1-1024'). Defaults to common ports.",
+          "default": "22,80,443,8080,8443,3306,5432,6379"
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Per-host timeout in seconds. Defaults to 5.",
+          "default": 5
+        }
+      },
+      "required": ["target"]
+    }
+  }
+}

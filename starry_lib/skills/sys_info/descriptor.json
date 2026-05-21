@@ -1,0 +1,22 @@
+{
+  "type": "function",
+  "function": {
+    "name": "sys_info",
+    "description": "Collect system information from the local machine. Returns CPU, memory, disk, network interface, and OS details. Use sections to limit the response to specific categories.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "sections": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["cpu", "memory", "disk", "network", "os"]
+          },
+          "description": "Subset of sections to return. Omit to return all sections.",
+          "default": ["cpu", "memory", "disk", "network", "os"]
+        }
+      },
+      "required": []
+    }
+  }
+}

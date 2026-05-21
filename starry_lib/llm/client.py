@@ -1,0 +1,78 @@
+"""LLM client factory and model listing for StarryLib."""
+
+import asyncio
+
+import httpx
+import openai
+from openai import AsyncOpenAI
+
+from starry_lib.config.settings import ProviderConfig
+
+
+async def call_with_retry(
+    factory,
+    max_attempts: int = 3,
+    delays: tuple = (1, 2, 4),
+):
+    """Call factory() with exponential backoff.
+
+    Retries on RateLimitError (429) and server errors
+    (5xx). Other errors are re-raised immediately.
+    """
+    last_exc: Exception | None = None
+    for i in range(max_attempts):
+        try:
+            result = await factory()
+            if result is None:
+                raise RuntimeError(
+                    "Provider returned an empty response "
+                    "(null). The model may not support "
+                    "the requested feature (e.g. tools)."
+                )
+            return result
+        except openai.RateLimitError as exc:
+            last_exc = exc
+        except openai.APIStatusError as exc:
+            if exc.status_code >= 500:
+                last_exc = exc
+            else:
+                raise
+        if i < max_attempts - 1:
+            await asyncio.sleep(delays[i])
+    raise last_exc  # type: ignore[misc]
+
+
+def build_client(provider: ProviderConfig) -> AsyncOpenAI:
+    """Build an AsyncOpenAI client from a ProviderConfig.
+
+    Uses a custom httpx.AsyncClient when ssl_verify is not True
+    (i.e. False or a cert path string).
+    """
+    api_key = provider.api_key  # raises RuntimeError if unset
+    ssl_value = provider.ssl_verify_value
+
+    if ssl_value is not True:
+        http_client = httpx.AsyncClient(verify=ssl_value)
+        return AsyncOpenAI(
+            base_url=provider.base_url,
+            api_key=api_key,
+            http_client=http_client,
+        )
+
+    return AsyncOpenAI(
+        base_url=provider.base_url,
+        api_key=api_key,
+    )
+
+
+async def list_models(provider: ProviderConfig) -> list[str]:
+    """Return a sorted list of model IDs from the provider.
+
+    Returns an empty list on any error — never raises.
+    """
+    try:
+        client = build_client(provider)
+        response = await client.models.list()
+        return sorted(m.id for m in response.data)
+    except Exception:  # noqa: BLE001
+        return []

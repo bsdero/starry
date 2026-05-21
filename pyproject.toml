@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "starry-lib"
+version = "0.1.0"
+description = "Multi-agent AI library"
+requires-python = ">=3.11"
+dependencies = [
+    "openai-agents>=0.0.19",
+    "openai>=1.50.0",
+    "pydantic-settings[toml]>=2.3.0",
+    "httpx>=0.27.0",
+    "mcp>=1.0.0",
+    "mcp-server-git>=0.6.0",
+    "mcp-server-fetch>=0.6.0",
+    "mcp-server-sqlite>=0.4.0",
+    "python-dotenv>=1.0.0",
+    "prompt_toolkit>=3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.4.0",
+]
+search = [
+    "duckduckgo-search>=6",
+    "tavily-python",
+    "exa-py",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["starry_lib*", "starry_cli*"]
+
+[project.scripts]
+starry_cli = "starry_cli.main:run"
+
+# Third-party packages register tools in this group.
+# Each entry must point to a zero-arg callable returning
+# a list of tools. Example:
+#   my_tools = "my_package.tools:get_tools"
+[project.entry-points."starry_lib.tools"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "live: hits a real provider API (skip with -m 'not live')",
+    "slow: takes more than 2 seconds",
+]
+addopts = "-v --tb=short -m 'not live'"
+
+[tool.ruff]
+line-length = 79
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
