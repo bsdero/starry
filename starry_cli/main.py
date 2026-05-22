@@ -1485,7 +1485,7 @@ def get_top_bar():
         len(t) for _, t in parts
         if "\n" not in t
     )
-    content_len = vis - 1 - w
+    content_len = vis - 2 - w
     pad = max(0, w - content_len)
     parts.append(
         ("class:top-bar.text", " " * pad)
@@ -2737,7 +2737,7 @@ def replace_last_block(
 def make_welcome():
     """Build welcome banner with markers."""
     w = frame_width()
-    inner = w - 2
+    inner = min(w, 73)
 
     lines = []
     lines.append(f"{M_PLAIN}")
@@ -2751,36 +2751,48 @@ def make_welcome():
     )
     _art = [
         (
-            "  · ★ · ✦ · ★ · ✦ · ★ · ✦ · ★ · ✦ ·",
-            M_DIM,
-        ),
-        (
-            " _____ _____  _    ____  ____  __   __",
+            " _____ _____  _    ____  ____"
+            "  __   __",
             M_AHEADER,
         ),
         (
-            "/ ___||_   _|/ \\  |  _ \\|  _ \\ \\ \\ / /",
+            "/ ___||_   _|/ \\  |  _ \\|  _ \\"
+            " \\ \\ / /",
             M_AHEADER,
         ),
         (
-            "\\___ \\  | | / _ \\ | |_) | |_) | \\ V / ",
+            "\\___ \\  | | / _ \\ | |_) | |_) |"
+            " \\ V / ",
             M_AHEADER,
         ),
         (
-            " ___) | | |/ ___ \\|  _ <|  _ <   | |  ",
+            " ___) | | |/ ___ \\|  _ <|  _ <"
+            "   | |  ",
             M_AHEADER,
         ),
         (
-            "|____/ |_|/_/   \\_\\_| \\_\\_| \\_\\  |_|  ",
+            "|____/ |_|/_/   \\_\\_| \\_\\_| \\_\\"
+            "  |_|  ",
             M_AHEADER,
-        ),
-        (
-            "  · ✦ · ★ · ✦ · ★ · ✦ · ★ · ✦ · ★ ·",
-            M_DIM,
         ),
     ]
-    for _al, _am in _art:
-        _ap = _pad_line(_al, inner)
+    # Right-side celestial decoration.
+    # Each is ≤32 visual cols (wide emoji=2).
+    # art(38) + gap(2) + deco(≤32) ≤ inner(73).
+    _right = [
+        "  🌑  ·  ✦  ·  ✨  ·  ✦  ·  🌕  ",
+        "  ·  🪐  ·  ★  ·  💫  ·  ★  ·  ",
+        "  🌍  ·  ✦  ·  🌟  ·  ✦  ·  🌑  ",
+        "  ·  ✦  ·  🌕  ·  ✦  ·  🌍  ·  ",
+        "  🌑  ·  ★  ·  🌍  ·  ★  ·  ✨  ",
+    ]
+    avail = inner - 40
+    for i, (_al, _am) in enumerate(_art):
+        if avail >= 31:
+            combined = _al + "  " + _right[i]
+        else:
+            combined = _al
+        _ap = _pad_line(combined, inner)
         lines.append(
             f"{_am} {VT}{_ap}{VT}"
         )
