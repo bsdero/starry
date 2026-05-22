@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:        davy_cli.py
 # DESCRIPTION: StarryCLI Terminal User Interface
@@ -15,11 +15,11 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer    Summary
-# 04/16/2026    ahernandez86      Library integration,
+# 04/16/2026    bsdero      Library integration,
 #                           /setup command,
 #                           error/warning frames,
 #                           hash-based session ID
-# 05/05/2026    ahernandez86      /stats command,
+# 05/05/2026    bsdero      /stats command,
 #                           Provider submenu (#26),
 #                           llama.cpp preset (#30),
 #                           About dialog (#31),
@@ -6560,8 +6560,8 @@ def _show_about(app):
         "Supports multiple providers, roles,\n"
         "skills, tools, and sessions.\n"
         "\n"
-        "Developer:  Armando Hernandez\n"
-        "Contact:    ahernandez86@lenovo.com\n"
+        "Developer:  BSDero\n"
+        "Contact:    bsdero@gmail.com\n"
     )
     _dlg.show_button_dialog(
         app,

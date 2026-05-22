@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       demo.py
 # DESCRIPTION: StarryLib library API demonstration
@@ -15,7 +15,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/15/2026    ahernandez86          Initial demo
+# 04/15/2026    bsdero          Initial demo
 """StarryLib library API — end-to-end demonstration."""
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       settings.py
 # DESCRIPTION: Settings models and loader for StarryLib
@@ -12,7 +12,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/15/2026    ahernandez86          Remove ThemeConfig, UIConfig
+# 04/15/2026    bsdero          Remove ThemeConfig, UIConfig
 """Settings models and loader for StarryLib."""
 
 import logging

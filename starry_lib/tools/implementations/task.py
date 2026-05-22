@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       task.py
 # DESCRIPTION: Task tool — launch autonomous subagents
@@ -12,7 +12,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/17/2026    ahernandez86          Initial implementation
+# 04/17/2026    bsdero          Initial implementation
 """task tool: launch autonomous subagents."""
 
 from __future__ import annotations

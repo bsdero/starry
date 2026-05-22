@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       describe_agent.py
 # DESCRIPTION: Tool — full config of a named agent
@@ -12,7 +12,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 05/05/2026    ahernandez86    Initial implementation
+# 05/05/2026    bsdero    Initial implementation
 """describe_agent tool."""
 
 from __future__ import annotations

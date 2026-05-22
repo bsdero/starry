@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       types.py
 # DESCRIPTION: Shared data types for the StarryLib library
@@ -13,7 +13,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/15/2026    ahernandez86          Initial implementation
+# 04/15/2026    bsdero          Initial implementation
 """Shared data types for the StarryLib library."""
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       __init__.py
 # DESCRIPTION: StarryLib tool implementations package
@@ -10,4 +10,4 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/17/2026    ahernandez86          Initial implementation
+# 04/17/2026    bsdero          Initial implementation

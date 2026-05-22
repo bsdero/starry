@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       agent_config.py
 # DESCRIPTION: Persistence format for named agents
@@ -13,7 +13,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 05/05/2026    ahernandez86    Initial implementation
+# 05/05/2026    bsdero    Initial implementation
 """Persistence dataclass for named agents."""
 
 from __future__ import annotations

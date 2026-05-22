@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       grep.py
 # DESCRIPTION: Grep tool — search file contents by regex
@@ -12,7 +12,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/17/2026    ahernandez86          Initial implementation
+# 04/17/2026    bsdero          Initial implementation
 """grep tool: search file contents for a regex pattern."""
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       agent_store.py
 # DESCRIPTION: CRUD for persistent agent configs
@@ -13,8 +13,8 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 05/05/2026    ahernandez86    Initial implementation
-# 05/06/2026    ahernandez86    Move storage to ~/.local/starry/
+# 05/05/2026    bsdero    Initial implementation
+# 05/06/2026    bsdero    Move storage to ~/.local/starry/
 """AgentStore: CRUD for ~/.local/starry/agents/."""
 
 from __future__ import annotations

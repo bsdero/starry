@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       websearch.py
 # DESCRIPTION: Websearch tool — keyword-based web search
@@ -12,7 +12,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/22/2026    ahernandez86    Initial implementation
+# 04/22/2026    bsdero    Initial implementation
 """websearch tool: keyword-based web search."""
 
 from __future__ import annotations

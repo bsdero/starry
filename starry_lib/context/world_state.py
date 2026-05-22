@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       world_state.py
 # DESCRIPTION: Environment snapshot injected into every LLM call
@@ -12,7 +12,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/21/2026    ahernandez86    Initial implementation
+# 04/21/2026    bsdero    Initial implementation
 """World-state: ambient environment block for LLM context."""
 
 from __future__ import annotations

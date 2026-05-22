@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       providers.py
 # DESCRIPTION: Provider management — pure library functions
@@ -13,7 +13,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/15/2026    ahernandez86          Extracted from cli/commands/provider
+# 04/15/2026    bsdero          Extracted from cli/commands/provider
 """Provider management — pure business logic, no UI."""
 
 from __future__ import annotations

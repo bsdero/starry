@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       list_active_agents.py
 # DESCRIPTION: Tool — list running named agents
@@ -11,7 +11,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 05/05/2026    ahernandez86    Initial implementation
+# 05/05/2026    bsdero    Initial implementation
 """list_active_agents tool."""
 
 from __future__ import annotations

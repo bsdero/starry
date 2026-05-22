@@ -1,9 +1,38 @@
+# Virtual environment
 .venv/
+
+# Python bytecode / cache
 __pycache__/
 *.pyc
-.env
-*.egg-info/
+*.pyo
+*.pyd
+
+# Python build artifacts
+build/
 dist/
+*.egg-info/
+
+# Test / lint caches
 .pytest_cache/
 .ruff_cache/
+
+# Secrets
+.env
+
+# Certificates
 certs/*.crt
+
+# Claude Code
+.claude/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Local historical docs
+old_plans_already_applied/

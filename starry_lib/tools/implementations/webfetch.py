@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       webfetch.py
 # DESCRIPTION: Webfetch tool — retrieve web content
@@ -11,7 +11,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/17/2026    ahernandez86          Initial implementation
+# 04/17/2026    bsdero          Initial implementation
 """webfetch tool: retrieve content from a URL."""
 
 from __future__ import annotations

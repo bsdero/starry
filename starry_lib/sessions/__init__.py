@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       sessions/__init__.py
 # DESCRIPTION: Sessions package
@@ -10,5 +10,5 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/20/2026    ahernandez86     Initial stub
+# 04/20/2026    bsdero     Initial stub
 """StarryLib sessions package."""

@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       tool_loader.py
 # DESCRIPTION: Tool loader — maps modes to tool sets
@@ -12,8 +12,8 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/17/2026    ahernandez86    Initial implementation
-# 04/21/2026    ahernandez86    Replace flat skill tool
+# 04/17/2026    bsdero    Initial implementation
+# 04/21/2026    bsdero    Replace flat skill tool
 #                               with skill_loader
 """Tool loader: mode-aware tool schema and executor."""
 

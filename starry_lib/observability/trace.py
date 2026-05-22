@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       trace.py
 # DESCRIPTION: Per-session structured execution tracer
@@ -14,7 +14,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer    Summary
-# 04/23/2026    ahernandez86    Initial implementation
+# 04/23/2026    bsdero    Initial implementation
 """Per-session execution tracer."""
 
 from __future__ import annotations

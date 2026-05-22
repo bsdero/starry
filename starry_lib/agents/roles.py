@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       roles.py
 # DESCRIPTION: Factory for building BaseAgent objects
@@ -15,8 +15,8 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/15/2026    ahernandez86    Initial implementation
-# 05/05/2026    ahernandez86    Add
+# 04/15/2026    bsdero    Initial implementation
+# 05/05/2026    bsdero    Add
 #               build_agent_from_persistent
 """Factory for building BaseAgent instances from config."""
 

@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       active_registry.py
 # DESCRIPTION: Registry of live named agent sessions
@@ -14,7 +14,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 05/05/2026    ahernandez86    Initial implementation
+# 05/05/2026    bsdero    Initial implementation
 """ActiveRegistry: live named-agent session map."""
 
 from __future__ import annotations

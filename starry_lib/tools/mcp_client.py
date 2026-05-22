@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       mcp_client.py
 # DESCRIPTION: Direct MCP client — no openai-agents SDK dep
@@ -12,7 +12,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/21/2026    ahernandez86    Initial implementation
+# 04/21/2026    bsdero    Initial implementation
 """mcp_client: direct MCP server connection for SkillTools."""
 
 from __future__ import annotations

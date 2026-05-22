@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       skill.py (network_scan)
 # DESCRIPTION: Scan a network target for live hosts/ports
@@ -10,7 +10,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/21/2026    ahernandez86    Initial implementation
+# 04/21/2026    bsdero    Initial implementation
 """network_scan skill: host and port discovery."""
 
 from __future__ import annotations

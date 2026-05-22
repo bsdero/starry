@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       cli/themes/loader.py
 # DESCRIPTION: Theme loader for StarryCLI TUI
@@ -15,7 +15,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/28/2026    ahernandez86    Moved from
+# 04/28/2026    bsdero    Moved from
 #                               starry_lib/themes/
 """Theme loader: reads JSON color-theme files."""
 

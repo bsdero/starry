@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       window_manager.py
 # DESCRIPTION: Context-window truncation for LLM message lists
@@ -13,7 +13,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/21/2026    ahernandez86    Initial implementation
+# 04/21/2026    bsdero    Initial implementation
 """Context-window manager: trim messages to fit a token budget."""
 
 from __future__ import annotations

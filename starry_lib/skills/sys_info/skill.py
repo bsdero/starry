@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       skill.py (sys_info)
 # DESCRIPTION: Collect local system information
@@ -10,7 +10,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/21/2026    ahernandez86    Initial implementation
+# 04/21/2026    bsdero    Initial implementation
 """sys_info skill: CPU, memory, disk, network, OS info."""
 
 from __future__ import annotations

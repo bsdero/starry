@@ -255,7 +255,7 @@ See `AGENTS.md` for a deeper reference on the named agent system design.
 ```python
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       filename.py
 # DESCRIPTION: ...

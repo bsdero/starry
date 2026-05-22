@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       loader.py
 # DESCRIPTION: Skill loader for StarryLib
@@ -13,7 +13,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/20/2026    ahernandez86          Initial implementation
+# 04/20/2026    bsdero          Initial implementation
 """Skill loader: reads markdown skill files."""
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       cli/dialogs.py
 # DESCRIPTION: Floating dialog library for StarryCLI
@@ -17,7 +17,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/30/2026    ahernandez86    Initial implementation
+# 04/30/2026    bsdero    Initial implementation
 """Floating dialog library for StarryCLI."""
 
 import shutil

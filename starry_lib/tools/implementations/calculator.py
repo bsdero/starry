@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 #
-# Copyright 2025-present Lenovo
+# Copyright 2025-present bsdero
 #
 # NAME:       calculator.py
 # DESCRIPTION: Calculator tool — evaluates math expressions
@@ -12,7 +12,7 @@
 #
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
-# 04/29/2026    ahernandez86    Initial implementation
+# 04/29/2026    bsdero    Initial implementation
 """calculator tool: evaluate mathematical expressions safely."""
 
 from __future__ import annotations
