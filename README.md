@@ -1,6 +1,6 @@
-# StarryLib
+# Starry
 
-**StarryLib** is a two-layer Python project for multi-agent LLM orchestration:
+**Starry** is a two-layer Python project for multi-agent LLM orchestration:
 
 - **`starry_lib/`** — async library for building multi-agent pipelines
 - **`starry_cli/`** — full-screen terminal UI (TUI) powered by `prompt_toolkit`
