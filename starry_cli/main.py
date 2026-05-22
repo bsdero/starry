@@ -61,7 +61,7 @@ from .themes.loader import (
     load_theme,
     list_themes,
 )
-from cli import dialogs as _dlg
+from starry_cli import dialogs as _dlg
 from prompt_toolkit import Application
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.document import Document
@@ -1426,7 +1426,7 @@ def get_top_bar():
     )
     parts.append((
         "class:top-bar.actor",
-        " D A V Y C L I 💠 ",
+        " ✦ S T A R R Y ✦ ",
     ))
     parts.append(
         ("class:top-bar.text", " ")
@@ -1531,7 +1531,7 @@ def get_bot_bar():
     )
 
     # Abbreviate provider/model for bottom bar
-    _bot_pname = _active_provider()[:10] or "—"
+    _bot_pname = (_active_provider() or "")[:10] or "—"
     _bot_mname = _active_model()
     if len(_bot_mname) > 14:
         _bot_mname = _bot_mname[:13] + "…"
@@ -2749,11 +2749,41 @@ def make_welcome():
         f"{M_ACONTENT} {VT}"
         f"{' ' * inner}{VT}"
     )
-    title = "    D A V Y C L I   "
-    p = _pad_line(title, inner)
-    lines.append(
-        f"{M_AHEADER} {VT}{p}{VT}"
-    )
+    _art = [
+        (
+            "  · ★ · ✦ · ★ · ✦ · ★ · ✦ · ★ · ✦ ·",
+            M_DIM,
+        ),
+        (
+            " _____ _____  _    ____  ____  __   __",
+            M_AHEADER,
+        ),
+        (
+            "/ ___||_   _|/ \\  |  _ \\|  _ \\ \\ \\ / /",
+            M_AHEADER,
+        ),
+        (
+            "\\___ \\  | | / _ \\ | |_) | |_) | \\ V / ",
+            M_AHEADER,
+        ),
+        (
+            " ___) | | |/ ___ \\|  _ <|  _ <   | |  ",
+            M_AHEADER,
+        ),
+        (
+            "|____/ |_|/_/   \\_\\_| \\_\\_| \\_\\  |_|  ",
+            M_AHEADER,
+        ),
+        (
+            "  · ✦ · ★ · ✦ · ★ · ✦ · ★ · ✦ · ★ ·",
+            M_DIM,
+        ),
+    ]
+    for _al, _am in _art:
+        _ap = _pad_line(_al, inner)
+        lines.append(
+            f"{_am} {VT}{_ap}{VT}"
+        )
     lines.append(
         f"{M_ACONTENT} {VT}"
         f"{' ' * inner}{VT}"

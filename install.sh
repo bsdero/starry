@@ -99,6 +99,7 @@ if command -v rsync &>/dev/null; then
     --exclude='*.egg-info/' \
     --exclude='.git/' \
     --exclude='.env' \
+    --exclude='config.toml' \
     --exclude='plan.md' \
     --exclude='install.sh' \
     "$SRC/" "$INSTALL_DIR/"
@@ -119,7 +120,14 @@ mkdir -p "$INSTALL_DIR/certs"
 hdr "Virtual environment"
 
 if [[ -d "$VENV" ]]; then
-  ok "venv already exists — reusing"
+  if "$VENV/bin/pip" --version &>/dev/null 2>&1; then
+    ok "venv already exists — reusing"
+  else
+    warn "Existing venv is broken — recreating"
+    rm -rf "$VENV"
+    "$PYTHON" -m venv "$VENV"
+    ok "Recreated venv at $VENV"
+  fi
 else
   "$PYTHON" -m venv "$VENV"
   ok "Created venv at $VENV"

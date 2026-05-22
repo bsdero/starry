@@ -17,7 +17,10 @@
 
 import logging
 import os
-import tomllib
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib  # type: ignore[no-redef]  # py<3.11
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -141,7 +144,7 @@ class AppSettings(BaseModel):
     websearch_backend: str = "auto"
     websearch_max_results: int = 5
     context_format: str = "markdown"
-    providers: dict[str, ProviderConfig]
+    providers: dict[str, ProviderConfig] = {}
     agents: dict[str, RoleConfig]
     mcp_servers: dict[str, MCPServerConfig] = {}
 
