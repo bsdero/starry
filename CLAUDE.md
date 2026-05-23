@@ -23,6 +23,12 @@ pip install -e ".[dev]"
 # Also install search extras to enable webfetch/websearch tools
 pip install -e ".[dev,search]"
 
+# First-time setup: copy env example to user config dir and fill in API keys
+cp .env.example ~/.local/starry/.env
+$EDITOR ~/.local/starry/.env
+# Then launch the TUI and use /setup to select a provider
+# (writes active_provider to ~/.local/starry/config.toml)
+
 # Launch the TUI (two ways after install)
 python -m starry_cli
 starry_cli
@@ -128,6 +134,13 @@ agent is killed).
 
 ### Tools & Skills
 
+**Two modes** (toggled with `/mode` in the TUI; stored in `_exec_mode` in `main.py`;
+passed to `get_tool_schemas(mode)` and `get_tool_executor(mode)`):
+
+- **Plan / Research** — read-only + research tools; safe for exploration without
+  side effects
+- **Execution** — all plan tools plus write/run tools; default mode at startup
+
 Tool implementations live in `starry_lib/tools/implementations/` (one module per
 tool). `tool_loader.py` provides `get_tool_schemas(mode)` and `get_tool_executor(mode)`
 for mode-aware selection.
@@ -231,7 +244,27 @@ Available event hooks: `on_session_start`, `on_session_end`, `on_tool_call`,
 
 ### TUI (`starry_cli/main.py`)
 
-Single ~9 000-line file. Key patterns:
+Single ~9 000-line file.
+
+**TUI commands** (unambiguous 4+-char prefixes are auto-expanded):
+
+| Command | Description |
+|---------|-------------|
+| `/setup` | Configure providers, models, tools, themes |
+| `/agent` | Create, list, edit, chat with named agents (8 sub-options) |
+| `/mode` | Toggle Plan/Research ↔ Execution |
+| `/role` | Switch active agent role |
+| `/provider` | Switch active LLM provider |
+| `/model` | Switch active model |
+| `/save` / `/load` | Save / restore session |
+| `/clear` | Clear conversation history |
+| `/rewind` | Remove last N turns |
+| `/summarize` | Summarise history to free context |
+| `/stats` | Show token usage and session info |
+| `/help` | Show all commands |
+| `/exit` | Exit the TUI |
+
+**Key patterns:**
 
 - **Marker-based rendering:** every line in the scroll buffer carries a 2-char invisible
   marker (e.g. `Uf`, `Ac`) that `FrameLexer` parses into color fragments
@@ -252,13 +285,28 @@ Single ~9 000-line file. Key patterns:
 
 ```toml
 [app]               # active_provider, active_role, context_format
-[providers.<name>]  # base_url, api_key_env, ssl_verify, default_model, context_window
+[providers.<name>]  # base_url, api_key_env, ssl_verify, default_model,
+                    # context_window, fallback (provider name to chain to)
 [agents.<name>]     # system_prompt (or goal/backstory/constraints/output_format),
                     # temperature, allowed_tools, can_delegate_to
 [mcp_servers.<name>] # transport (stdio/http), command, args
 ```
 
-API keys are stored in `.env` as the variable named in `api_key_env`.
+**Config layering** (`load_settings()` merges in order, later wins):
+1. Bundled `config/default.toml` (roles, MCP servers, provider presets)
+2. `~/.local/starry/config.toml` (user overlay — active provider set here by `/setup`)
+3. Project root `.env` (if present), then `~/.local/starry/.env` (wins on conflicts)
+
+**User data directory** (`~/.local/starry/`):
+
+| Path | Contents |
+|------|----------|
+| `config.toml` | Active provider; written by `/setup` |
+| `.env` | API keys (`cp .env.example ~/.local/starry/.env`) |
+| `user.json` | TUI preferences: theme, exec mode, context format |
+| `user_roles.json` | User-created role keys (added via `/role`) |
+| `sessions/<id>/session.json` | Saved conversation sessions |
+| `agents/<name>.json` | Named agent configs (managed by `AgentStore`) |
 
 ### Session Persistence
 
@@ -269,8 +317,6 @@ public interface in `starry_lib/sessions/store.py`.
 Named agent configs are stored separately in `~/.local/starry/agents/<name>.json`
 (managed by `AgentStore`). Agent sessions are ephemeral — they do not persist
 across TUI restarts.
-
-See `AGENTS.md` for a deeper reference on the named agent system design.
 
 ### Tests
 
@@ -303,6 +349,38 @@ See `AGENTS.md` for a deeper reference on the named agent system design.
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
 # MM/DD/YYYY    username        Description of change
+```
+
+### `starry_lib` Public API
+
+`import starry_lib as sl` (or `as da` in the TUI source) exposes:
+
+```python
+# Config & settings
+sl.load_settings()          # → AppSettings; merges TOML + env
+sl.AppSettings, sl.ProviderConfig, sl.RoleConfig
+sl.AgentConfig, sl.MCPServerConfig
+
+# Types (the streaming currency)
+sl.AgentEvent   # type: token | tool_call | tool_result | error | done
+sl.Message, sl.SessionInfo
+
+# Agents
+sl.AgentPool    # async context manager; spawn() → Session
+sl.Session      # chat(), chat_auto(), chat_with_tools(), chat_complete()
+
+# LLM client
+sl.build_client(provider)   # → AsyncOpenAI
+sl.list_models(provider)    # → list[str]
+
+# Provider CRUD (used by /setup)
+sl.list_providers(), sl.add_provider(), sl.remove_provider()
+sl.set_active_provider(), sl.probe_provider()
+
+# Tool helpers
+sl.get_tool_schemas(mode)   # "plan" | "execution"
+sl.get_tool_executor(mode)
+sl.build_mcp_servers(settings)
 ```
 
 ## Key Dependencies

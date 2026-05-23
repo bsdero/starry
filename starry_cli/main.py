@@ -9873,7 +9873,7 @@ async def _save_session_on_exit(
         store_save(session)
         print(
             f"\nSession saved.\n"
-            f"Resume with: davy_cli.py"
+            f"Resume with: starry_cli"
             f" --session {session.id}",
             file=sys.stderr,
         )
