@@ -1157,6 +1157,7 @@ class SelectionMenu:
         self.selected = 0
         self.title = ""
         self._callback = None
+        self._on_cancel = None
         self.white_mode = False
         self._prev_lines = 0
         self.checkbox_mode = False
@@ -1168,6 +1169,7 @@ class SelectionMenu:
         self, title, options,
         callback, white=False,
         checkbox=False, num_checkboxes=None,
+        on_cancel=None,
     ):
         """
         Activate the menu with given options.
@@ -1176,12 +1178,15 @@ class SelectionMenu:
         checkbox=True → show [ ]/[x] toggles.
         num_checkboxes overrides how many items
         get checkboxes (default: all items).
+        on_cancel() called on Escape instead of
+        the default session cancel behaviour.
         """
         self.active = True
         self.title = title
         self.options = list(options)
         self.selected = 0
         self._callback = callback
+        self._on_cancel = on_cancel
         self.white_mode = white
         self.checkbox_mode = checkbox
         if checkbox:
@@ -1238,6 +1243,7 @@ class SelectionMenu:
         """Cancel the menu without calling the callback."""
         self.active = False
         self._callback = None
+        self._on_cancel = None
 
     def build_frame(self):
         """
@@ -2594,23 +2600,43 @@ def _extract_follow_ups(text):
 
 
 def _show_follow_up_dialog(app, questions):
-    """Floating follow-up menu after response.
-    Populates input_area on selection; Escape
-    dismisses with no side effect."""
+    """Inline follow-up suggestions after response.
+    Renders via sel_menu in the scroll buffer.
+    Selecting pre-fills the input area; Escape
+    dismisses without triggering session events."""
     def on_select(idx):
+        prev = sel_menu._prev_lines
+        if prev > 0:
+            replace_last_block(prev, "")
         input_area.buffer.set_document(
             Document(text=questions[idx]),
             bypass_readonly=True,
         )
         app.layout.focus(input_area)
+        app.invalidate()
 
-    _dlg.show_menu_dialog(
-        app,
-        title="Follow-up questions",
-        options=questions,
-        on_select=on_select,
-        refocus=input_area,
+    def on_cancel():
+        append_text(
+            build_inline_notif(
+                "Follow-ups dismissed.",
+                "↩",
+            )
+        )
+        app.invalidate()
+
+    sel_menu.show(
+        "Follow-up questions",
+        questions,
+        on_select,
+        white=True,
+        on_cancel=on_cancel,
     )
+    menu_text = sel_menu.build_frame()
+    sel_menu._prev_lines = (
+        menu_text.count("\n") + 1
+    )
+    append_text(menu_text)
+    app.invalidate()
 
 
 # ===================================================
@@ -6978,11 +7004,16 @@ def handle_enter(event):
 def handle_escape(event):
     """Cancel active menu."""
     prev_lines = sel_menu._prev_lines
+    on_cancel = sel_menu._on_cancel
     sel_menu.dismiss()
-    if _da_session is not None:
-        _da_session.cancel_confirm()
+    if on_cancel is not None:
+        on_cancel()
+        event.app.invalidate()
+        return
     if prev_lines > 0:
         replace_last_block(prev_lines, "")
+    if _da_session is not None:
+        _da_session.cancel_confirm()
     append_text(
         build_inline_notif(
             "StarryCLI is ready.",

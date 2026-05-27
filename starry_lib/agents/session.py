@@ -1325,6 +1325,7 @@ class Session:
         self._provider_name = provider_cfg.name
         role_cfg = settings.agents[self._agent.name]
         self._agent = build_agent(role_cfg, provider_cfg)
+        self._context_window = provider_cfg.context_window
         if old_name != self._provider_name:
             self.log_event(
                 "provider_change",

@@ -26,7 +26,10 @@ from typing import AsyncIterator
 from starry_lib.agents.roles import build_agent
 from starry_lib.agents.session import Session
 from starry_lib.config.settings import AppSettings, ProviderConfig
-from starry_lib.llm.client import build_client
+from starry_lib.llm.client import (
+    build_client,
+    get_model_context_window,
+)
 from starry_lib.types import AgentEvent, SessionInfo
 
 
@@ -173,6 +176,12 @@ class AgentPool:
         sid = session_id or str(uuid.uuid4())
         client = build_client(provider_cfg)
 
+        ctx_window = provider_cfg.context_window
+        if ctx_window is None:
+            ctx_window = await get_model_context_window(
+                provider_cfg, agent.model
+            )
+
         session = Session(
             session_id=sid,
             agent=agent,
@@ -181,7 +190,7 @@ class AgentPool:
             semaphore=self._semaphore,
             mode=mode,
             extra_tools=self._mcp_tools,
-            context_window=provider_cfg.context_window,
+            context_window=ctx_window,
         )
         self._sessions[sid] = session
         return session

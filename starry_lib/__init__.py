@@ -24,7 +24,11 @@ from starry_lib.config.settings import (
     RoleConfig,
     load_settings,
 )
-from starry_lib.llm.client import build_client, list_models
+from starry_lib.llm.client import (
+    build_client,
+    get_model_context_window,
+    list_models,
+)
 from starry_lib.providers import (
     add_provider,
     get_default_paths,
@@ -69,6 +73,7 @@ __all__ = [
     # LLM
     "build_client",
     "list_models",
+    "get_model_context_window",
     # Provider management
     "list_providers",
     "get_provider",

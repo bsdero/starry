@@ -76,3 +76,37 @@ async def list_models(provider: ProviderConfig) -> list[str]:
         return sorted(m.id for m in response.data)
     except Exception:  # noqa: BLE001
         return []
+
+
+_CONTEXT_WINDOW_FIELDS = (
+    "context_length",
+    "context_window",
+    "max_context_length",
+    "max_model_len",
+)
+
+
+async def get_model_context_window(
+    provider: ProviderConfig, model_id: str
+) -> int | None:
+    """Try to get the context window size for *model_id*.
+
+    Queries the provider's model list and inspects
+    provider-specific extra fields (e.g. OpenRouter's
+    ``context_length``).  Returns None if the information
+    is unavailable or on any error — never raises.
+    """
+    try:
+        client = build_client(provider)
+        response = await client.models.list()
+        for m in response.data:
+            if m.id != model_id:
+                continue
+            extra = getattr(m, "model_extra", {}) or {}
+            for field in _CONTEXT_WINDOW_FIELDS:
+                val = extra.get(field)
+                if isinstance(val, int) and val > 0:
+                    return val
+    except Exception:  # noqa: BLE001
+        pass
+    return None
