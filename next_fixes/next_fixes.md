@@ -8,25 +8,44 @@ If not, get the context_size from the model list API call.
    be done through the in-scroll components for that, not through the TUI
    components.
 
-3.-Review the standard system prompts.
+3.-[COMPLETE] Move the role "software engineer" or "software developer" to a default
+   role included with starry.
 
-4.-Use a different system prompt for PLAN mode.
+4.-Use a different system prompt for PLAN mode. You can get it from
+   @prompts/plan_mode.txt
+
 5.-Double check if we have an "/aboutme" option, where the user gives feedback
    about himself.
+
 6.-Double check the command if /btw, /rewind are implemented
+
 7.-Check the command /compact or /summarize it should summarize the context,
    and start a new conversation.
+
 8.-implement the comands /new, /project, /branch, /add-dir, /focus, /goal,
    /recap, /review
+
 9.-Add infrastructure and commands for the user to define workflow and
    commands.
+
 10.-Fix the configuration directory in ~/.local/starry. We will use ~/.starry
    and a configuration scheme of directories an files pretty much the same
    than claude code.
+
 11.-Add creation of a directories tree, similar with settings and configuration
 specific for project directory, identical to ~/.local/starry, named .starry.
 Files in `pwd`/.starry will overrid the setting in ~/.local/starry.
+
 12.-Add the multichat option. This allows two or more agents to chat
 one single conversation among all.
+
 13.-BUGFIX: The context meter in the top bar shows always a current context
     length = 0. It should increase in each request/answer.
+
+14.-The dialog that appears in "/role" option has a frame and the frame appears
+    like it has been cut out, in both sides. Fix it.
+
+15.-[COMPLETE] Remove spaces between the chat frames.
+
+16.-check the names of the agents overrides role name. 
+

@@ -405,6 +405,22 @@ class Session:
             getattr(usage, "total_tokens", 0) or 0
         )
 
+    def _estimate_usage(
+        self,
+        messages: list[dict],
+        response_text: str,
+    ) -> None:
+        """Fallback token estimation when the provider
+        does not return usage data in the stream.
+        Uses len(json_bytes)//4 as a rough approximation,
+        the same heuristic used by window_manager.py.
+        """
+        prompt = len(json.dumps(messages)) // 4
+        completion = len(response_text) // 4
+        self._token_usage["prompt"] += prompt
+        self._token_usage["completion"] += completion
+        self._token_usage["total"] += prompt + completion
+
     # ── LLM helpers ───────────────────────────────────────────
 
     def _llm_kwargs(self) -> dict:
@@ -486,6 +502,21 @@ class Session:
                 self._context_window,
                 self._agent.model,
             )
+        if self._mode == "plan":
+            from starry_lib.prompts.loader import (
+                load_plan_prompt,
+            )
+            plan_text = load_plan_prompt()
+            if plan_text:
+                for i in reversed(range(len(msgs))):
+                    if msgs[i]["role"] == "user":
+                        msgs[i] = dict(msgs[i])
+                        msgs[i]["content"] = (
+                            msgs[i]["content"]
+                            + "\n\n"
+                            + plan_text
+                        )
+                        break
         return msgs
 
     # ── Core I/O ──────────────────────────────────────────────
@@ -582,6 +613,12 @@ class Session:
 
         try:
             async for chunk in stream:
+                if not chunk.choices:
+                    if chunk.usage:
+                        self._accumulate_usage(
+                            chunk.usage
+                        )
+                    continue
                 delta = chunk.choices[0].delta
                 if delta.content:
                     tokens.append(delta.content)
@@ -605,6 +642,10 @@ class Session:
             return
 
         response_text = "".join(tokens)
+        if self._token_usage["total"] == _chat_tok0:
+            self._estimate_usage(
+                messages, response_text
+            )
         self._tracer.record(TraceEntry(
             turn=_chat_turn,
             type="llm_call",
@@ -739,6 +780,7 @@ class Session:
         tool_calls_made = False
         tool_exchange: list[Message] = []
         _client = self._client
+        _cwt_tok0 = self._token_usage["total"]
 
         try:
             while True:
@@ -1042,6 +1084,8 @@ class Session:
             return
 
         final = "".join(final_tokens)
+        if self._token_usage["total"] == _cwt_tok0:
+            self._estimate_usage(messages, final)
         self._history.append(
             Message(role="user", content=user_input)
         )

@@ -1875,14 +1875,9 @@ def build_ai_frame(md_text):
     lines.append(
         f"{M_AFRAME} {TL}{top}"
     )
-    # Empty line after caption
-    lines.append(
-        f"{M_ACONTENT} {VT}"
-        f"{' ' * inner}{VT}"
-    )
 
     md_lines = _parse_markdown(
-        md_text, inner
+        md_text.strip("\n"), inner
     )
     lines.extend(md_lines)
 
@@ -1942,11 +1937,6 @@ def build_inline_notif(message, label="🔔"):
     lines.append(
         f"{M_NFRAME} {TL}{top}"
     )
-    # Empty line
-    lines.append(
-        f"{M_NCONTENT} {VT}"
-        f"{' ' * inner}{VT}"
-    )
     # Content — split on newlines, then wrap
     content_w = inner - 4
     prefix = "   "
@@ -1962,11 +1952,6 @@ def build_inline_notif(message, label="🔔"):
         lines.append(
             f"{M_NCONTENT} {VT}{p}{VT}"
         )
-    # Empty line
-    lines.append(
-        f"{M_NCONTENT} {VT}"
-        f"{' ' * inner}{VT}"
-    )
     # Bottom
     lines.append(
         f"{M_NFRAME} {BL}{HZ * inner}{BR}"
@@ -1990,9 +1975,6 @@ def build_role_info_frame(role_name: str) -> str:
     )
     top = f"{HZ}{title}{HZ * rest}{TR}"
     lines.append(f"{M_NFRAME} {TL}{top}")
-    lines.append(
-        f"{M_NCONTENT} {VT}{' ' * inner}{VT}"
-    )
 
     def _row(key: str, val: str) -> str:
         content_w = inner - 2
@@ -2033,9 +2015,6 @@ def build_role_info_frame(role_name: str) -> str:
     lines.append(_row("Model:", model_str))
 
     lines.append(
-        f"{M_NCONTENT} {VT}{' ' * inner}{VT}"
-    )
-    lines.append(
         f"{M_NFRAME} {BL}{HZ * inner}{BR}"
     )
     return "\n".join(lines)
@@ -2059,10 +2038,6 @@ def build_error_frame(message):
     lines.append(
         f"{M_EFRAME} {TL}{top}"
     )
-    lines.append(
-        f"{M_ECONTENT} {VT}"
-        f"{' ' * inner}{VT}"
-    )
     content_w = inner - 4
     prefix = "   "
     wrapped = _wrap_text(
@@ -2074,10 +2049,6 @@ def build_error_frame(message):
         lines.append(
             f"{M_ECONTENT} {VT}{p}{VT}"
         )
-    lines.append(
-        f"{M_ECONTENT} {VT}"
-        f"{' ' * inner}{VT}"
-    )
     lines.append(
         f"{M_EFRAME} {BL}{HZ * inner}{BR}"
     )
@@ -2102,10 +2073,6 @@ def build_warn_frame(message):
     lines.append(
         f"{M_WFRAME} {TL}{top}"
     )
-    lines.append(
-        f"{M_WCONTENT} {VT}"
-        f"{' ' * inner}{VT}"
-    )
     content_w = inner - 4
     prefix = "   "
     wrapped = _wrap_text(
@@ -2117,10 +2084,6 @@ def build_warn_frame(message):
         lines.append(
             f"{M_WCONTENT} {VT}{p}{VT}"
         )
-    lines.append(
-        f"{M_WCONTENT} {VT}"
-        f"{' ' * inner}{VT}"
-    )
     lines.append(
         f"{M_WFRAME} {BL}{HZ * inner}{BR}"
     )
@@ -2144,10 +2107,6 @@ def build_question_frame(questions):
     )
     top = f"{HZ}{title}{HZ * rest}{TR}"
     lines.append(f"{M_NFRAME} {TL}{top}")
-    lines.append(
-        f"{M_NCONTENT} {VT}"
-        f"{' ' * inner}{VT}"
-    )
     content_w = inner - 4
     for i, q in enumerate(questions, 1):
         prefix = f"   {i}. "
@@ -2194,10 +2153,6 @@ def build_wizard_prompt_frame(prompt_text):
     )
     top = f"{HZ}{title}{HZ * rest}{TR}"
     lines.append(f"{M_NFRAME} {TL}{top}")
-    lines.append(
-        f"{M_NCONTENT} {VT}"
-        f"{' ' * inner}{VT}"
-    )
     content_w = inner - 4
     wrapped = _wrap_text(
         str(prompt_text), content_w
@@ -2240,20 +2195,12 @@ def build_setup_list_frame(title, items):
     lines.append(
         f"{M_NFRAME} {TL}{top}"
     )
-    lines.append(
-        f"{M_NCONTENT} {VT}"
-        f"{' ' * inner}{VT}"
-    )
     for item in items:
         c = f"   {item}"
         p = _pad_line(c, inner)
         lines.append(
             f"{M_NCONTENT} {VT}{p}{VT}"
         )
-    lines.append(
-        f"{M_NCONTENT} {VT}"
-        f"{' ' * inner}{VT}"
-    )
     lines.append(
         f"{M_NFRAME} {BL}{HZ * inner}{BR}"
     )
@@ -2275,10 +2222,6 @@ def build_tools_frame(schemas: list) -> str:
     )
     top = f"{HZ}{label}{HZ * rest}{TR}"
     lines.append(f"{M_NFRAME} {TL}{top}")
-    lines.append(
-        f"{M_NCONTENT} {VT}"
-        f"{' ' * inner}{VT}"
-    )
     if not schemas:
         p = _pad_line("  (none)", inner)
         lines.append(
@@ -2300,10 +2243,6 @@ def build_tools_frame(schemas: list) -> str:
             lines.append(
                 f"{M_NCONTENT} {VT}{p}{VT}"
             )
-    lines.append(
-        f"{M_NCONTENT} {VT}"
-        f"{' ' * inner}{VT}"
-    )
     lines.append(
         f"{M_NFRAME} {BL}{HZ * inner}{BR}"
     )
@@ -2743,9 +2682,9 @@ def replace_last_block(
     lines = current.split("\n")
     keep = lines[:len(lines) - old_lines]
     new = "\n".join(keep)
-    if new:
+    if new and new_text:
         new = new + "\n" + new_text
-    else:
+    elif not new:
         new = new_text
     main_buffer.set_document(
         Document(
@@ -3041,9 +2980,9 @@ def _replace_buf_last(buf, old_lines, new_text):
     lines = current.split("\n")
     keep = lines[:len(lines) - old_lines]
     new = "\n".join(keep)
-    if new:
+    if new and new_text:
         new = new + "\n" + new_text
-    else:
+    elif not new:
         new = new_text
     buf.set_document(
         Document(
