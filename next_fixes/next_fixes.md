@@ -11,7 +11,7 @@ If not, get the context_size from the model list API call.
 3.-[COMPLETE] Move the role "software engineer" or "software developer" to a default
    role included with starry.
 
-4.-Use a different system prompt for PLAN mode. You can get it from
+4.-[COMPLETE] Use a different system prompt for PLAN mode. You can get it from
    @prompts/plan_mode.txt
 
 5.-Double check if we have an "/aboutme" option, where the user gives feedback
@@ -28,11 +28,11 @@ If not, get the context_size from the model list API call.
 9.-Add infrastructure and commands for the user to define workflow and
    commands.
 
-10.-Fix the configuration directory in ~/.local/starry. We will use ~/.starry
+10.-[COMPLETE] Fix the configuration directory in ~/.local/starry. We will use ~/.starry
    and a configuration scheme of directories an files pretty much the same
    than claude code.
 
-11.-Add creation of a directories tree, similar with settings and configuration
+11.-[COMPLETE] Add creation of a directories tree, similar with settings and configuration
 specific for project directory, identical to ~/.local/starry, named .starry.
 Files in `pwd`/.starry will overrid the setting in ~/.local/starry.
 

@@ -97,8 +97,14 @@ async def _connect_stdio(cfg) -> list[SkillTool]:
         )
         return []
 
+    import sys
+    cmd = cfg.command
+    if cmd in ("python", "python3") or (
+        cmd.startswith("python3.")
+    ):
+        cmd = sys.executable
     params = StdioServerParameters(
-        command=cfg.command,
+        command=cmd,
         args=cfg.args,
     )
     try:
@@ -206,6 +212,7 @@ async def _call_tool(
 async def _call_stdio(
     cfg, name: str, kwargs: dict
 ) -> dict:
+    import sys
     from mcp import (  # type: ignore[import]
         ClientSession,
         StdioServerParameters,
@@ -214,8 +221,13 @@ async def _call_stdio(
         stdio_client,
     )
 
+    cmd = cfg.command
+    if cmd in ("python", "python3") or (
+        cmd.startswith("python3.")
+    ):
+        cmd = sys.executable
     params = StdioServerParameters(
-        command=cfg.command,
+        command=cmd,
         args=cfg.args,
     )
     async with stdio_client(params) as (rd, wr):

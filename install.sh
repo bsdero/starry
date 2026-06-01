@@ -147,7 +147,8 @@ ok "starry-lib installed (editable)"
 # ── 5. .env file ──────────────────────────────────────────────────────
 hdr "Environment file"
 
-ENV_FILE="$INSTALL_DIR/.env"
+mkdir -p "$INSTALL_DIR/conf"
+ENV_FILE="$INSTALL_DIR/conf/.env"
 if [[ -f "$ENV_FILE" ]]; then
   ok ".env already exists — not overwriting"
 else
@@ -189,7 +190,7 @@ ok "Launcher written: $LAUNCHER"
 # ── 8. Config check ───────────────────────────────────────────────────
 hdr "User config"
 
-USER_CONFIG="$INSTALL_DIR/config.toml"
+USER_CONFIG="$INSTALL_DIR/conf/config.toml"
 if [[ -f "$USER_CONFIG" ]]; then
   ok "User config present: $USER_CONFIG"
 else
@@ -229,10 +230,10 @@ echo -e "    ${BOLD}starry_cli provider list${RESET}"
 echo -e "    ${BOLD}starry_cli provider use openai${RESET}"
 echo ""
 echo -e "  Edit config:"
-echo -e "    ${BOLD}\$EDITOR $INSTALL_DIR/config.toml${RESET}"
+echo -e "    ${BOLD}\$EDITOR $INSTALL_DIR/conf/config.toml${RESET}"
 echo ""
 echo -e "  Edit API keys:"
-echo -e "    ${BOLD}\$EDITOR $INSTALL_DIR/.env${RESET}"
+echo -e "    ${BOLD}\$EDITOR $INSTALL_DIR/conf/.env${RESET}"
 echo ""
 echo -e "  Uninstall:"
 echo -e "    ${BOLD}bash $SRC/install.sh --uninstall${RESET}"

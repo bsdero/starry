@@ -35,12 +35,15 @@ from pathlib import Path
 from typing import Any
 
 
+from starry_lib.config.paths import global_conf_dir
+
+
 def _sessions_dir() -> Path:
     """Return (and create) the sessions root."""
     base = Path(
         os.environ.get(
             "STARRY_SESSIONS_DIR",
-            Path.home() / ".local" / "starry" / "sessions",
+            str(global_conf_dir() / "sessions"),
         )
     )
     base.mkdir(parents=True, exist_ok=True)

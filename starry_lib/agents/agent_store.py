@@ -24,10 +24,12 @@ from dataclasses import asdict
 from pathlib import Path
 
 from starry_lib.agents.agent_config import AgentConfig
-
-_STORE_DIR = (
-    Path.home() / ".local" / "starry" / "agents"
+from starry_lib.config.paths import (
+    global_conf_dir,
+    project_conf_dir,
 )
+
+_STORE_DIR = global_conf_dir() / "agents"
 
 
 def _ensure_dir() -> Path:
@@ -40,20 +42,53 @@ def _path(name: str) -> Path:
 
 
 def list_agents() -> list[AgentConfig]:
-    """Return all stored AgentConfig objects."""
+    """Return all stored AgentConfig objects.
+
+    Merges global and project agents.
+    Project agents shadow global agents with the same name.
+    """
     d = _ensure_dir()
-    result: list[AgentConfig] = []
+    seen: dict[str, AgentConfig] = {}
+
     for f in sorted(d.glob("*.json")):
         try:
             data = json.loads(f.read_text())
-            result.append(AgentConfig(**data))
+            cfg = AgentConfig(**data)
+            seen[cfg.name] = cfg
         except Exception:
             pass
-    return result
+
+    proj = project_conf_dir()
+    if proj is not None:
+        proj_agents = proj / "agents"
+        if proj_agents.is_dir():
+            for f in sorted(
+                proj_agents.glob("*.json")
+            ):
+                try:
+                    data = json.loads(f.read_text())
+                    cfg = AgentConfig(**data)
+                    seen[cfg.name] = cfg
+                except Exception:
+                    pass
+
+    return list(seen.values())
 
 
 def get_agent(name: str) -> AgentConfig | None:
-    """Return AgentConfig by name, or None."""
+    """Return AgentConfig by name, or None.
+
+    Checks pwd/.starry/agents/ first, then the global dir.
+    """
+    proj = project_conf_dir()
+    if proj is not None:
+        proj_p = proj / "agents" / f"{name}.json"
+        if proj_p.exists():
+            try:
+                data = json.loads(proj_p.read_text())
+                return AgentConfig(**data)
+            except Exception:
+                pass
     p = _path(name)
     if not p.exists():
         return None

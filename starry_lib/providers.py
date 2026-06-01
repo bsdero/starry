@@ -223,13 +223,14 @@ def _set_app_value(
 
 def get_default_paths() -> tuple[Path, Path]:
     """Return (config_path, env_path) for the
-    user config layout at ~/.local/starry/.
+    user config layout at ~/.local/starry/conf/.
 
     Returns:
-        (~/.local/starry/config.toml,
-         ~/.local/starry/.env) as Paths.
+        (~/.local/starry/conf/config.toml,
+         ~/.local/starry/conf/.env) as Paths.
     """
-    base = Path.home() / ".local" / "starry"
+    from starry_lib.config.paths import global_conf_dir
+    base = global_conf_dir()
     base.mkdir(parents=True, exist_ok=True)
     return (
         base / "config.toml",

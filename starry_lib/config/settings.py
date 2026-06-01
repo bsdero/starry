@@ -149,10 +149,13 @@ class AppSettings(BaseModel):
     mcp_servers: dict[str, MCPServerConfig] = {}
 
 
-_USER_CONFIG = (
-    Path.home() / ".local" / "starry" / "config.toml"
+from starry_lib.config.paths import (
+    global_conf_dir,
+    project_conf_dir,
 )
-_USER_ENV = Path.home() / ".local" / "starry" / ".env"
+
+_USER_CONFIG = global_conf_dir() / "config.toml"
+_USER_ENV = global_conf_dir() / ".env"
 
 
 def _find_project_root() -> Path:
@@ -215,12 +218,28 @@ def load_settings(
             )
             raw = _deep_merge(raw, user_raw)
 
+        # Project config layer (pwd/.starry/config.toml)
+        _proj = project_conf_dir()
+        if _proj is not None:
+            _proj_cfg = _proj / "config.toml"
+            if _proj_cfg.exists():
+                proj_raw = tomllib.loads(
+                    _proj_cfg.read_text()
+                )
+                raw = _deep_merge(raw, proj_raw)
+
         # Load env: project .env first, user .env wins
         proj_env = root / ".env"
         if proj_env.exists():
             load_dotenv(proj_env)
         if _USER_ENV.exists():
             load_dotenv(_USER_ENV, override=True)
+
+        # Project .env wins over everything
+        if _proj is not None:
+            _proj_env = _proj / ".env"
+            if _proj_env.exists():
+                load_dotenv(_proj_env, override=True)
 
     # Flatten [app] keys into the top level
     app_block = raw.pop("app", {})

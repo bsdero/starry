@@ -813,22 +813,29 @@ def _load_user_roles() -> None:
     global _user_roles
     if _da_settings is None:
         return
-    if not USER_ROLES_PATH.exists():
-        return
-    try:
-        raw = json.loads(
-            USER_ROLES_PATH.read_text()
-        )
-        for key, entry in raw.items():
-            entry["name"] = key
-            try:
-                rcfg = da.RoleConfig(**entry)
-                _da_settings.agents[key] = rcfg
-                _user_roles.add(key)
-            except Exception:
-                pass
-    except Exception:
-        pass
+
+    def _apply_roles_file(path: Path) -> None:
+        if not path.exists():
+            return
+        try:
+            raw = json.loads(path.read_text())
+            for key, entry in raw.items():
+                entry["name"] = key
+                try:
+                    rcfg = da.RoleConfig(**entry)
+                    _da_settings.agents[key] = rcfg
+                    _user_roles.add(key)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    _apply_roles_file(USER_ROLES_PATH)
+
+    # Project roles win on name collision
+    proj = project_conf_dir()
+    if proj is not None:
+        _apply_roles_file(proj / "user_roles.json")
 
 
 def _save_user_roles() -> None:
@@ -932,7 +939,12 @@ telemetry = TelemetryState()
 # ---------------------------------------------------
 # App state (set by main before app starts)
 # ---------------------------------------------------
-_STARRY_DIR = Path.home() / ".local" / "starry"
+from starry_lib.config.paths import (
+    global_conf_dir,
+    project_conf_dir,
+)
+
+_STARRY_DIR = global_conf_dir()
 _STARRY_DIR.mkdir(parents=True, exist_ok=True)
 USER_PREFS_PATH = _STARRY_DIR / "user.json"
 USER_ROLES_PATH = _STARRY_DIR / "user_roles.json"
@@ -9854,6 +9866,49 @@ async def _save_session_on_exit(
         )
 
 
+def _migrate_conf_dir() -> None:
+    """Move config files from ~/.local/starry/ into conf/.
+
+    Runs only when conf/ does not exist yet and at least one
+    config file is present in the old location.
+    """
+    old = Path.home() / ".local" / "starry"
+    new = old / "conf"
+
+    if (new / "config.toml").exists():
+        return
+
+    candidates = [
+        "config.toml",
+        ".env",
+        "user.json",
+        "user_roles.json",
+        "agents",
+        "sessions",
+    ]
+    found = [
+        old / name
+        for name in candidates
+        if (old / name).exists()
+    ]
+    if not found:
+        return
+
+    new.mkdir(parents=True, exist_ok=True)
+    for src in found:
+        dst = new / src.name
+        if dst.exists():
+            continue
+        if src.is_dir():
+            shutil.copytree(src, dst)
+            shutil.rmtree(src)
+        else:
+            src.rename(dst)
+    print(
+        "Migrated config to ~/.local/starry/conf/"
+    )
+
+
 async def main():
     global _da_settings, _da_session
     global _exec_mode
@@ -9864,6 +9919,8 @@ async def main():
     global _default_temperature
     global _default_max_tokens, _default_top_p
     global _user_name, _user_profile
+
+    _migrate_conf_dir()
 
     args = _parse_args()
 
