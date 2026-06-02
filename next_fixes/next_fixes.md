@@ -9,7 +9,9 @@ If not, get the context_size from the model list API call.
    components.
 
 3.-[COMPLETE] Move the role "software engineer" or "software developer" to a default
-   role included with starry.
+   role included with starry. The role implemented is "assistant"
+   (config/default.toml [agents.assistant]); prompt sourced from
+   prompts/role_assistant.txt.
 
 4.-[COMPLETE] Use a different system prompt for PLAN mode. You can get it from
    @prompts/plan_mode.txt
@@ -39,10 +41,10 @@ Files in `pwd`/.starry will overrid the setting in ~/.local/starry.
 12.-Add the multichat option. This allows two or more agents to chat
 one single conversation among all.
 
-13.-BUGFIX: The context meter in the top bar shows always a current context
+13.-[COMPLETE] BUGFIX: The context meter in the top bar shows always a current context
     length = 0. It should increase in each request/answer.
 
-14.-The dialog that appears in "/role" option has a frame and the frame appears
+14.-[COMPLETE] The dialog that appears in "/role" option has a frame and the frame appears
     like it has been cut out, in both sides. Fix it.
 
 15.-[COMPLETE] Remove spaces between the chat frames.

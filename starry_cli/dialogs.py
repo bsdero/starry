@@ -681,7 +681,7 @@ def show_menu_dialog(
     nav_h = (
         len(options)
         if mv is None
-        else mv + 2
+        else min(len(options), mv) + 2
     )
     nav_ctrl = FormattedTextControl(
         _render,
@@ -902,7 +902,9 @@ def show_toggle_dialog(
         return frags
 
     nav_h = (
-        len(items) if mv is None else mv + 2
+        len(items)
+        if mv is None
+        else min(len(items), mv) + 2
     )
     nav_ctrl = FormattedTextControl(
         _render,
