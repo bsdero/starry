@@ -16,12 +16,12 @@ If not, get the context_size from the model list API call.
 4.-[COMPLETE] Use a different system prompt for PLAN mode. You can get it from
    @prompts/plan_mode.txt
 
-5.-Double check if we have an "/aboutme" option, where the user gives feedback
+5.-[COMPLETE] Double check if we have an "/aboutme" option, where the user gives feedback
    about himself.
 
 6.-Double check the command if /btw, /rewind are implemented
 
-7.-Check the command /compact or /summarize it should summarize the context,
+7.-[COMPLETE] Check the command /compact or /summarize it should summarize the context,
    and start a new conversation.
 
 8.-implement the comands /new, /project, /branch, /add-dir, /focus, /goal,

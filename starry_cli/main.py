@@ -3800,6 +3800,130 @@ async def _run_summarize(app):
     app.invalidate()
 
 
+async def _run_compact(app):
+    """Summarize the conversation and immediately
+    start a fresh session with the summary injected
+    as context — no menu, no file save.
+    """
+    if _da_pool is None or _da_session is None:
+        append_text(
+            build_error_frame(
+                "No session available."
+            )
+        )
+        app.invalidate()
+        return
+
+    history = _da_session.get_history()
+    if not history:
+        append_text(
+            build_inline_notif(
+                "No conversation to compact.",
+                "💬",
+            )
+        )
+        app.invalidate()
+        return
+
+    conv_lines = []
+    for m in history:
+        role = m.role.upper()
+        content = (m.content or "").strip()
+        if content:
+            conv_lines.append(
+                f"[{role}]: {content}"
+            )
+    conv_text = "\n\n".join(conv_lines)
+    prompt = (
+        "Summarize the following conversation "
+        "concisely, capturing key topics, "
+        "decisions, and context needed to "
+        "continue it:\n\n" + conv_text
+    )
+
+    telemetry.ai_status = "thinking"
+    spinner_text = build_thinking_frame(
+        SPINNER[0]
+    )
+    append_text(spinner_text)
+    app.invalidate()
+    spin_lines = spinner_text.count("\n") + 1
+    stop_spinner = asyncio.Event()
+
+    async def _spin():
+        while not stop_spinner.is_set():
+            await asyncio.sleep(0.1)
+            ch = telemetry.next_spinner()
+            replace_last_block(
+                spin_lines,
+                build_thinking_frame(ch),
+            )
+            app.invalidate()
+
+    spin_task = asyncio.ensure_future(_spin())
+
+    summary_text = None
+    try:
+        sub = await _da_pool.spawn(
+            role=_active_role(),
+            provider=_active_provider(),
+        )
+        summary_text = (
+            await sub.chat_complete(prompt)
+        )
+    except Exception as exc:
+        stop_spinner.set()
+        await spin_task
+        replace_last_block(spin_lines, "")
+        append_text(
+            build_error_frame(
+                f"Compact failed: {exc}"
+            )
+        )
+        app.invalidate()
+        telemetry.ai_status = "idle"
+        return
+    finally:
+        if not stop_spinner.is_set():
+            stop_spinner.set()
+            await spin_task
+            replace_last_block(spin_lines, "")
+            app.invalidate()
+        try:
+            await _da_pool.terminate(sub.id)
+        except Exception:
+            pass
+
+    telemetry.ai_status = "idle"
+
+    global _auto_approved, _autosum_triggered
+    _da_session.clear_history()
+    _da_session.reset_tokens()
+    _autosum_triggered = False
+    _da_session.active_skills.append("summary")
+    _da_session._internal_messages.append(
+        "Conversation summary "
+        f"(prior context):\n{summary_text}"
+    )
+    _auto_approved.clear()
+    welcome = make_welcome()
+    main_buffer.set_document(
+        Document(
+            text=welcome,
+            cursor_position=len(welcome),
+        ),
+        bypass_readonly=True,
+    )
+    append_text(
+        build_inline_notif(
+            "Compacted — new session started "
+            "with summary as context.",
+            "✓",
+        )
+    )
+    app.invalidate()
+
+
 # ===================================================
 # Autosummarize
 # ===================================================
@@ -7847,11 +7971,17 @@ def _build_help_md() -> str:
         "- `/rewind` — Remove last message"
         " and response from context\n"
         "- `/summarize` — Summarize the "
-        "conversation and save to file\n"
+        "conversation, save to file, then "
+        "choose to continue or start fresh\n"
+        "- `/compact` — Summarize and "
+        "immediately start a fresh session "
+        "with summary as context\n"
         "- `/help` — Show this help\n"
         "- `/init` — Generate AGENTS.md\n"
         "- `/setup` — Change provider, "
         "model, tools and theme\n"
+        "- `/aboutme` — Set your name and "
+        "profile for the AI context\n"
         "- `/mode` — Select execution mode\n"
         "- `/role` — Display and change "
         "agent role\n"
@@ -8861,12 +8991,12 @@ def setup_input_handler(app):
         # ── Command prefix auto-run ───────
         _ALL_COMMANDS = [
             "/exit", "/clear", "/rewind",
-            "/summarize", "/help", "/tools",
+            "/summarize", "/compact", "/help", "/tools",
             "/skills", "/sessions", "/rename",
             "/ask", "/trace", "/mode",
             "/role", "/setup", "/init",
             "/buffer", "/stats", "/agent",
-            "/close",
+            "/close", "/aboutme",
         ]
         if (
             text.startswith("/")
@@ -8986,6 +9116,19 @@ def setup_input_handler(app):
             app.invalidate()
             asyncio.ensure_future(
                 _run_summarize(app)
+            )
+            return
+
+        # ── /compact ──────────────────────
+        if text.lower() == "/compact":
+            append_text(
+                build_user_frame(
+                    text, _exec_mode
+                )
+            )
+            app.invalidate()
+            asyncio.ensure_future(
+                _run_compact(app)
             )
             return
 
@@ -9550,6 +9693,15 @@ def setup_input_handler(app):
                 on_select=on_setup_select,
                 refocus=input_area,
             )
+            return
+
+        # ── /aboutme ──────────────────────
+        if text.lower() == "/aboutme":
+            append_text(
+                build_user_frame(text, _exec_mode)
+            )
+            app.invalidate()
+            _show_user_personalization(app)
             return
 
         # ── /stats ────────────────────────
