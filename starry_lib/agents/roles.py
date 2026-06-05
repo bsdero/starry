@@ -47,6 +47,7 @@ def build_agent(
         name=role_cfg.name,
         label=role_cfg.label,
         system_prompt=role_cfg.system_prompt,
+        role=role_cfg.name,
         goal=role_cfg.goal,
         backstory=role_cfg.backstory,
         constraints=role_cfg.constraints,
@@ -162,6 +163,7 @@ def build_agent_from_persistent(
         name=agent_cfg.name,
         label=agent_cfg.label,
         system_prompt=system_prompt,
+        role=agent_cfg.role,
         goal=(
             ""
             if system_prompt

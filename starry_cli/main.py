@@ -38,7 +38,7 @@ Layout:
   Bottom Bar: AI status keybindings telemetry
   Input: ❯❯ prompt
 
-Commands: /help /setup /mode /role /clear /rewind /summarize /rename /exit /ask /buffer
+Commands: /help /setup /mode /role /clear /rewind /summarize /rename /exit /btw /buffer
 Requirements: prompt_toolkit >= 3.0, starry_lib
 """
 
@@ -1593,12 +1593,22 @@ def get_bot_bar():
     parts.append(
         ("class:bot-bar.label", " │ ")
     )
-    parts.append(
-        ("class:bot-bar.label", "role ")
-    )
-    rlabel = _active_role()[:10] or "—"
+    if _session_stack:
+        _bot_rlabel = (
+            "agent "
+        )
+        _bot_rval = (
+            _session_stack[-1]["name"][:10]
+            or "—"
+        )
+    else:
+        _bot_rlabel = "role "
+        _bot_rval = _active_role()[:10] or "—"
     parts.append((
-        "class:bot-bar.version", rlabel
+        "class:bot-bar.label", _bot_rlabel
+    ))
+    parts.append((
+        "class:bot-bar.version", _bot_rval
     ))
     parts.append(
         ("class:bot-bar.label", " │ ")
@@ -3566,7 +3576,7 @@ async def _run_ask_subagent(app, question):
     q_preview = question[:60]
     append_text(
         build_inline_notif(
-            f"subagent ({_active_role()}): {q_preview}",
+            f"btw ({_active_role()}): {q_preview}",
             "◈",
         )
     )
@@ -4461,6 +4471,334 @@ def _show_autosummarize_setup(app) -> None:
         title="AutoSummarize settings",
         options=opts,
         on_select=on_autosum_setup,
+        refocus=input_area,
+    )
+
+
+# ===================================================
+# /setup → Custom commands helpers
+# ===================================================
+
+def _cmd_safe_width() -> int:
+    """Dialog width capped to terminal width - 4."""
+    cols = shutil.get_terminal_size().columns
+    return min(68, cols - 4)
+
+
+def _show_custom_commands_menu(app) -> None:
+    """Top-level menu for custom command CRUD."""
+    opts = [
+        "A. Create command",
+        "B. List commands",
+        "C. Edit command",
+        "D. Delete command",
+    ]
+
+    def on_select(idx):
+        ch = opts[idx][0]
+        if ch == "A":
+            _cmd_create(app)
+        elif ch == "B":
+            _cmd_list(app)
+        elif ch == "C":
+            _cmd_edit(app)
+        elif ch == "D":
+            _cmd_delete(app)
+
+    _dlg.show_menu_dialog(
+        app,
+        title="Custom commands",
+        options=opts,
+        on_select=on_select,
+        refocus=input_area,
+    )
+
+
+def _cmd_create(app) -> None:
+    """Wizard: ask for name then prompt, then save."""
+    from starry_lib.commands.store import (
+        validate_name,
+        command_exists,
+        save_command,
+    )
+    w = _cmd_safe_width()
+
+    def _ask_prompt(name):
+        def _on_prompt(text):
+            if not text.strip():
+                _dlg.show_button_dialog(
+                    app,
+                    title="Error",
+                    message=(
+                        "Prompt cannot be empty."
+                    ),
+                    buttons=["OK"],
+                    on_button=lambda _: None,
+                    width=w,
+                    refocus=input_area,
+                )
+                return
+            save_command(name, text.strip())
+            append_text(
+                build_inline_notif(
+                    f"Command /{name} saved.",
+                    "✓",
+                )
+            )
+            app.invalidate()
+
+        _dlg.show_input_dialog(
+            app,
+            title="New command — prompt",
+            label=(
+                "LLM PROMPT: Text sent to the"
+                " model when /"
+                + name
+                + " is invoked."
+            ),
+            on_confirm=_on_prompt,
+            multiline=True,
+            field_height=5,
+            width=w,
+            refocus=input_area,
+        )
+
+    def _on_name(text):
+        name = text.strip()
+        err = validate_name(name)
+        if err:
+            _dlg.show_button_dialog(
+                app,
+                title="Invalid name",
+                message=err,
+                buttons=["OK"],
+                on_button=lambda _: None,
+                width=w,
+                refocus=input_area,
+            )
+            return
+        if command_exists(name):
+            def _overwrite(idx):
+                if idx == 0:
+                    _ask_prompt(name)
+
+            _dlg.show_button_dialog(
+                app,
+                title="Overwrite?",
+                message=(
+                    f"/{name} already exists."
+                    " Overwrite?"
+                ),
+                buttons=["Yes", "No"],
+                on_button=_overwrite,
+                width=w,
+                refocus=input_area,
+            )
+            return
+        _ask_prompt(name)
+
+    _dlg.show_input_dialog(
+        app,
+        title="New command — name",
+        label=(
+            "COMMAND NAME: Letters, digits,"
+            " and hyphens only."
+            " Do not include the leading /."
+        ),
+        on_confirm=_on_name,
+        width=w,
+        refocus=input_area,
+    )
+
+
+def _cmd_list(app) -> None:
+    """Display all custom commands in the buffer."""
+    from starry_lib.commands.store import (
+        list_commands,
+    )
+    cmds = list_commands()
+    if not cmds:
+        append_text(
+            build_inline_notif(
+                "No custom commands defined yet."
+                " Use /setup → Custom commands"
+                " → Create.",
+                "i",
+            )
+        )
+        app.invalidate()
+        return
+    lines = ["Custom commands:\n"]
+    for c in cmds:
+        prompt_preview = c["prompt"]
+        if len(prompt_preview) > 60:
+            prompt_preview = (
+                prompt_preview[:57] + "..."
+            )
+        lines.append(
+            f"  /{c['name']}\n"
+            f"    {prompt_preview}\n"
+        )
+    append_text(build_ai_frame("".join(lines)))
+    app.invalidate()
+
+
+def _cmd_edit(app) -> None:
+    """Pick a command, then edit name and prompt."""
+    from starry_lib.commands.store import (
+        list_commands,
+        validate_name,
+        delete_command,
+        save_command,
+    )
+    cmds = list_commands()
+    if not cmds:
+        append_text(
+            build_warn_frame(
+                "No custom commands to edit."
+            )
+        )
+        app.invalidate()
+        return
+    names = [c["name"] for c in cmds]
+    w = _cmd_safe_width()
+
+    def _pick(idx):
+        original = cmds[idx]
+        orig_name = original["name"]
+        orig_prompt = original["prompt"]
+
+        def _on_new_prompt(new_prompt):
+            np = new_prompt.strip()
+            if not np:
+                _dlg.show_button_dialog(
+                    app,
+                    title="Error",
+                    message=(
+                        "Prompt cannot be empty."
+                    ),
+                    buttons=["OK"],
+                    on_button=lambda _: None,
+                    width=w,
+                    refocus=input_area,
+                )
+                return
+            save_command(_d["name"], np)
+            if _d["name"] != orig_name:
+                delete_command(orig_name)
+            append_text(
+                build_inline_notif(
+                    f"Command /{_d['name']}"
+                    " updated.",
+                    "✓",
+                )
+            )
+            app.invalidate()
+
+        def _on_new_name(new_name):
+            nn = new_name.strip()
+            err = validate_name(nn)
+            if err:
+                _dlg.show_button_dialog(
+                    app,
+                    title="Invalid name",
+                    message=err,
+                    buttons=["OK"],
+                    on_button=lambda _: None,
+                    width=w,
+                    refocus=input_area,
+                )
+                return
+            _d["name"] = nn
+            _dlg.show_input_dialog(
+                app,
+                title="Edit command — prompt",
+                label=(
+                    "LLM PROMPT: Text sent to"
+                    " the model."
+                ),
+                on_confirm=_on_new_prompt,
+                multiline=True,
+                field_height=5,
+                initial_text=orig_prompt,
+                width=w,
+                refocus=input_area,
+            )
+
+        _d: dict = {"name": orig_name}
+        _dlg.show_input_dialog(
+            app,
+            title="Edit command — name",
+            label=(
+                "COMMAND NAME: Letters, digits,"
+                " and hyphens only."
+            ),
+            on_confirm=_on_new_name,
+            initial_text=orig_name,
+            width=w,
+            refocus=input_area,
+        )
+
+    _dlg.show_menu_dialog(
+        app,
+        title="Edit — select command",
+        options=[f"/{n}" for n in names],
+        on_select=_pick,
+        refocus=input_area,
+    )
+
+
+def _cmd_delete(app) -> None:
+    """Pick a command and confirm deletion."""
+    from starry_lib.commands.store import (
+        list_commands,
+        delete_command,
+    )
+    cmds = list_commands()
+    if not cmds:
+        append_text(
+            build_warn_frame(
+                "No custom commands to delete."
+            )
+        )
+        app.invalidate()
+        return
+    names = [c["name"] for c in cmds]
+    w = _cmd_safe_width()
+
+    def _pick(idx):
+        name = names[idx]
+
+        def _confirm(idx):
+            if idx != 0:
+                return
+            delete_command(name)
+            append_text(
+                build_inline_notif(
+                    f"Command /{name} deleted.",
+                    "✓",
+                )
+            )
+            app.invalidate()
+
+        _dlg.show_button_dialog(
+            app,
+            title="Delete command",
+            message=(
+                f"Delete /{name}? "
+                "This cannot be undone."
+            ),
+            buttons=["Yes", "No"],
+            on_button=_confirm,
+            width=w,
+            refocus=input_area,
+        )
+
+    _dlg.show_menu_dialog(
+        app,
+        title="Delete — select command",
+        options=[f"/{n}" for n in names],
+        on_select=_pick,
         refocus=input_area,
     )
 
@@ -7959,15 +8297,306 @@ def create_app():
 
 
 # ---------------------------------------------------
+# Diagnostic helpers
+async def _run_doctor(app, settings) -> None:
+    """Run health checks and display results."""
+    import sys
+    from pathlib import Path
+    from starry_lib.config.paths import (
+        global_conf_dir,
+    )
+    from starry_lib.providers import (
+        probe_provider,
+    )
+    from starry_lib.tools.mcp_client import (
+        connect_mcp_server,
+    )
+
+    lines = ["## Starry Diagnostics\n"]
+
+    v = sys.version_info
+    if v >= (3, 12):
+        lines.append(
+            f"✓ Python {v.major}.{v.minor}"
+            " (full MCP support)"
+        )
+    elif v >= (3, 11):
+        lines.append(
+            f"⚠ Python {v.major}.{v.minor}"
+            " (MCP needs 3.12 for"
+            " full support)"
+        )
+    else:
+        lines.append(
+            f"✗ Python {v.major}.{v.minor}"
+            " — StarryLib requires 3.11+"
+        )
+
+    cfg_file = (
+        global_conf_dir() / "config.toml"
+    )
+    if cfg_file.exists():
+        lines.append("✓ config.toml found")
+    else:
+        lines.append(
+            "✗ config.toml not found"
+            f" ({cfg_file})"
+        )
+
+    env_file = global_conf_dir() / ".env"
+    if env_file.exists():
+        lines.append("✓ .env file found")
+    else:
+        lines.append(
+            "⚠ .env file not found"
+            f" ({env_file})"
+        )
+
+    if settings is None:
+        lines.append("✗ Settings not loaded")
+    else:
+        pname = settings.active_provider
+        if not pname:
+            lines.append(
+                "✗ No active provider set"
+            )
+        else:
+            pcfg = settings.providers.get(
+                pname
+            )
+            if pcfg is None:
+                lines.append(
+                    f"✗ Provider '{pname}'"
+                    " not found in config"
+                )
+            else:
+                import os as _os
+                key_var = pcfg.api_key_env
+                key_val = _os.environ.get(
+                    key_var, ""
+                )
+                if key_val:
+                    lines.append(
+                        f"✓ API key env var"
+                        f" {key_var} is set"
+                    )
+                else:
+                    lines.append(
+                        f"✗ API key env var"
+                        f" {key_var} is NOT"
+                        f" set"
+                    )
+                try:
+                    models = await (
+                        probe_provider(pcfg)
+                    )
+                    lines.append(
+                        f"✓ Provider '{pname}'"
+                        f" reachable"
+                        f" ({len(models)}"
+                        f" models)"
+                    )
+                except Exception as exc:
+                    lines.append(
+                        f"✗ Provider '{pname}'"
+                        f" unreachable: {exc}"
+                    )
+
+        if not settings.mcp_servers:
+            lines.append(
+                "⚠ No MCP servers"
+                " configured"
+            )
+        else:
+            for sname, scfg in (
+                settings.mcp_servers.items()
+            ):
+                try:
+                    tools = await (
+                        connect_mcp_server(scfg)
+                    )
+                    status = (
+                        f"✓ {len(tools)} tools"
+                    )
+                except Exception:
+                    status = "✗ unreachable"
+                lines.append(
+                    f"- **{sname}**"
+                    f" [{scfg.transport}]"
+                    f" {status}"
+                )
+
+        try:
+            from starry_lib.tools.tool_loader\
+                import get_tool_schemas
+            from starry_lib.tools.skill_loader\
+                import load_skills
+            schemas = get_tool_schemas(
+                "execution"
+            )
+            skills = load_skills()
+            lines.append(
+                f"✓ {len(schemas)} built-in"
+                f" tools loaded,"
+                f" {len(skills)} skills"
+                f" discovered"
+            )
+        except Exception as exc:
+            lines.append(
+                f"⚠ Could not count"
+                f" tools: {exc}"
+            )
+
+    report = "\n".join(lines)
+    append_text(
+        build_inline_notif(report, "🩺")
+    )
+    app.invalidate()
+
+
+async def _run_mcp_cmd(
+    app, settings, sub: str
+) -> None:
+    """Handle /mcp sub-commands."""
+    from starry_lib.tools.mcp_client import (
+        connect_mcp_server,
+    )
+
+    if settings is None:
+        append_text(
+            build_error_frame(
+                "Settings not loaded."
+            )
+        )
+        app.invalidate()
+        return
+
+    servers = settings.mcp_servers
+    if not servers:
+        append_text(
+            build_inline_notif(
+                "No MCP servers configured.",
+                "🔌",
+            )
+        )
+        app.invalidate()
+        return
+
+    parts = sub.split(None, 1)
+    sub_cmd = (
+        parts[0].lower() if parts else ""
+    )
+    sub_arg = (
+        parts[1] if len(parts) > 1 else ""
+    )
+
+    if sub_cmd in ("", "list"):
+        lines = ["## MCP Servers\n"]
+        for sname, scfg in servers.items():
+            try:
+                tools = await (
+                    connect_mcp_server(scfg)
+                )
+                status = (
+                    f"✓ {len(tools)} tools"
+                )
+            except Exception:
+                status = "✗ unreachable"
+            lines.append(
+                f"- **{sname}**"
+                f" [{scfg.transport}]"
+                f" {status}"
+            )
+        append_text(
+            build_inline_notif(
+                "\n".join(lines), "🔌"
+            )
+        )
+        app.invalidate()
+        return
+
+    if sub_cmd == "info":
+        if not sub_arg:
+            append_text(
+                build_error_frame(
+                    "Usage: /mcp info <name>"
+                )
+            )
+            app.invalidate()
+            return
+        scfg = servers.get(sub_arg)
+        if scfg is None:
+            append_text(
+                build_error_frame(
+                    f"MCP server '{sub_arg}'"
+                    " not found."
+                )
+            )
+            app.invalidate()
+            return
+        try:
+            tools = await (
+                connect_mcp_server(scfg)
+            )
+            lines = [
+                f"## MCP '{sub_arg}'"
+                f" tools\n"
+            ]
+            for t in tools:
+                _tname = (
+                    t.SCHEMA["function"][
+                        "name"
+                    ]
+                )
+                _tdesc = (
+                    t.SCHEMA["function"].get(
+                        "description", ""
+                    )
+                )
+                lines.append(
+                    f"- {_tname}: {_tdesc}"
+                )
+            append_text(
+                build_inline_notif(
+                    "\n".join(lines), "🔌"
+                )
+            )
+        except Exception as exc:
+            append_text(
+                build_error_frame(
+                    f"Could not connect to"
+                    f" '{sub_arg}': {exc}"
+                )
+            )
+        app.invalidate()
+        return
+
+    append_text(
+        build_error_frame(
+            f"Unknown /mcp sub-command:"
+            f" '{sub_cmd}'."
+            " Use: /mcp, /mcp list,"
+            " /mcp info <name>"
+        )
+    )
+    app.invalidate()
+
+
+# ---------------------------------------------------
 # Input handler
 def _build_help_md() -> str:
     """Return the /help command markdown text."""
-    return (
+    from starry_lib.commands.store import (
+        list_commands,
+    )
+    base = (
         "## Available Commands\n"
         "\n"
         "- `/exit` — Shut down StarryCLI\n"
         "- `/clear` — Reset conversation "
         "and context (asks confirmation)\n"
+        "- `/new` — Start a fresh"
+        " conversation\n"
         "- `/rewind` — Remove last message"
         " and response from context\n"
         "- `/summarize` — Summarize the "
@@ -7990,10 +8619,20 @@ def _build_help_md() -> str:
         "the session\n"
         "- `/sessions` — Browse and resume "
         "saved sessions\n"
-        "- `/rename` — Rename current session\n"
+        "- `/save` — Save current session"
+        " to disk\n"
+        "- `/load` — Load a saved session"
+        " (alias for /sessions)\n"
+        "- `/rename` — Rename current"
+        " session\n"
+        "- `/add-dir <path>` — Add a"
+        " directory to session context\n"
+        "- `/doctor` — Run diagnostics\n"
+        "- `/mcp [list|info <name>]` —"
+        " Manage MCP servers\n"
         "- `/buffer` — Manage buffers and"
         " tabs (list, open, close)\n"
-        "- `/ask <question>` — One-shot "
+        "- `/btw <question>` — One-shot "
         "subagent answer with full context."
         " Does not modify session history.\n"
         "- `/trace` — Show per-turn LLM and "
@@ -8025,6 +8664,23 @@ def _build_help_md() -> str:
         "- `Enter` — Confirm selection\n"
         "- `Escape` — Dismiss menu\n"
     )
+    cmds = list_commands()
+    if not cmds:
+        return base
+    lines = [
+        "\n### Custom Commands\n\n"
+    ]
+    for c in cmds:
+        prompt_preview = c["prompt"]
+        if len(prompt_preview) > 55:
+            prompt_preview = (
+                prompt_preview[:52] + "..."
+            )
+        lines.append(
+            f"- `/{c['name']}` —"
+            f" {prompt_preview}\n"
+        )
+    return base + "".join(lines)
 
 
 def _build_agents_md() -> str:
@@ -8991,12 +9647,15 @@ def setup_input_handler(app):
         # ── Command prefix auto-run ───────
         _ALL_COMMANDS = [
             "/exit", "/clear", "/rewind",
-            "/summarize", "/compact", "/help", "/tools",
+            "/summarize", "/compact",
+            "/help", "/tools",
             "/skills", "/sessions", "/rename",
-            "/ask", "/trace", "/mode",
+            "/btw", "/trace", "/mode",
             "/role", "/setup", "/init",
             "/buffer", "/stats", "/agent",
             "/close", "/aboutme",
+            "/new", "/save", "/load",
+            "/add-dir", "/doctor", "/mcp",
         ]
         if (
             text.startswith("/")
@@ -9095,6 +9754,94 @@ def setup_input_handler(app):
             )
             return
 
+        # ── /new ──────────────────────────
+        if text.lower() == "/new":
+            append_text(
+                build_user_frame(
+                    text, _exec_mode
+                )
+            )
+            app.invalidate()
+            global SESSION_NAME
+            global _auto_approved
+            global _autosum_triggered
+            if _da_session is not None:
+                new_id = _da_session.new_session()
+                SESSION_NAME = new_id
+            _auto_approved.clear()
+            _autosum_triggered = False
+            welcome = make_welcome()
+            main_buffer.set_document(
+                Document(
+                    text=welcome,
+                    cursor_position=len(welcome),
+                ),
+                bypass_readonly=True,
+            )
+            append_text(
+                build_inline_notif(
+                    "New session started.", "✦"
+                )
+            )
+            app.invalidate()
+            return
+
+        # ── /add-dir ──────────────────────
+        if text.lower().startswith("/add-dir"):
+            _add_dir_arg = text[9:].strip()
+            append_text(
+                build_user_frame(
+                    text, _exec_mode
+                )
+            )
+            app.invalidate()
+            if not _add_dir_arg:
+                append_text(
+                    build_error_frame(
+                        "/add-dir requires"
+                        " a path. Usage:"
+                        " /add-dir <path>"
+                    )
+                )
+                app.invalidate()
+                return
+            import os as _os
+            _dir_path = _os.path.expanduser(
+                _add_dir_arg
+            )
+            if not _os.path.isdir(_dir_path):
+                append_text(
+                    build_error_frame(
+                        f"Directory not"
+                        f" found: {_dir_path}"
+                    )
+                )
+                app.invalidate()
+                return
+            if _da_session is not None:
+                _da_session\
+                    .inject_system_message(
+                        f"The user has added"
+                        f" directory"
+                        f" '{_dir_path}' to"
+                        f" the session"
+                        f" context. You may"
+                        f" read files from"
+                        f" it using your"
+                        f" tools."
+                    )
+            _ai_task = asyncio.ensure_future(
+                handle_ai_response(
+                    app,
+                    f"List the contents of"
+                    f" '{_dir_path}' and"
+                    f" give a brief summary"
+                    f" of what is in it.",
+                    _da_session,
+                )
+            )
+            return
+
         # ── /rewind ───────────────────────
         if text.lower() == "/rewind":
             append_text(
@@ -9160,6 +9907,10 @@ def setup_input_handler(app):
             app.invalidate()
             _show_toggle_skill(app)
             return
+
+        # ── /load (alias for /sessions) ───
+        if text.lower() == "/load":
+            text = "/sessions"
 
         # ── /sessions ─────────────────────
         if text.lower() == "/sessions":
@@ -9386,6 +10137,44 @@ def setup_input_handler(app):
             )
             return
 
+        # ── /save ─────────────────────────
+        if text.lower() == "/save":
+            append_text(
+                build_user_frame(
+                    text, _exec_mode
+                )
+            )
+            app.invalidate()
+            if _da_session is None:
+                append_text(
+                    build_error_frame(
+                        "No active session"
+                        " to save."
+                    )
+                )
+                app.invalidate()
+                return
+            try:
+                from starry_lib.sessions.store\
+                    import save as store_save
+                store_save(_da_session)
+                append_text(
+                    build_inline_notif(
+                        f"Session saved:"
+                        f" {_da_session.id}",
+                        "💾",
+                    )
+                )
+            except Exception as exc:
+                append_text(
+                    build_error_frame(
+                        f"Could not save"
+                        f" session: {exc}"
+                    )
+                )
+            app.invalidate()
+            return
+
         # ── /rename ───────────────────────
         if text.lower() == "/rename":
             append_text(
@@ -9486,8 +10275,8 @@ def setup_input_handler(app):
             _rename_dialog()
             return
 
-        # ── /ask ──────────────────────────
-        if text.lower().startswith("/ask"):
+        # ── /btw ──────────────────────────
+        if text.lower().startswith("/btw"):
             question = text[4:].strip()
             append_text(
                 build_user_frame(text, _exec_mode)
@@ -9496,7 +10285,7 @@ def setup_input_handler(app):
             if not question:
                 append_text(
                     build_inline_notif(
-                        "Usage: /ask <question>",
+                        "Usage: /btw <question>",
                         "◈",
                     )
                 )
@@ -9628,6 +10417,7 @@ def setup_input_handler(app):
                 "AutoSummarize",
                 "Default conversation",
                 "User personalization",
+                "Custom commands",
                 "Reset defaults",
                 "About",
             ]
@@ -9678,6 +10468,14 @@ def setup_input_handler(app):
                     )
                     _app_mode = _prev_mode
 
+                elif chosen == (
+                    "Custom commands"
+                ):
+                    _show_custom_commands_menu(
+                        app
+                    )
+                    _app_mode = _prev_mode
+
                 elif chosen == "Reset defaults":
                     _reset_defaults(app)
                     _app_mode = _prev_mode
@@ -9692,6 +10490,27 @@ def setup_input_handler(app):
                 options=setup_opts,
                 on_select=on_setup_select,
                 refocus=input_area,
+            )
+            return
+
+        # ── /mcp ──────────────────────────
+        if (
+            text.lower() == "/mcp"
+            or text.lower().startswith("/mcp ")
+        ):
+            _mcp_arg = text[5:].strip()
+            append_text(
+                build_user_frame(
+                    text, _exec_mode
+                )
+            )
+            app.invalidate()
+            asyncio.ensure_future(
+                _run_mcp_cmd(
+                    app,
+                    _da_settings,
+                    _mcp_arg,
+                )
             )
             return
 
@@ -9713,6 +10532,27 @@ def setup_input_handler(app):
             )
             app.invalidate()
             _show_stats(app)
+            return
+
+        # ── /doctor ───────────────────────
+        if text.lower() == "/doctor":
+            append_text(
+                build_user_frame(
+                    text, _exec_mode
+                )
+            )
+            append_text(
+                build_inline_notif(
+                    "Running diagnostics…",
+                    "🩺",
+                )
+            )
+            app.invalidate()
+            asyncio.ensure_future(
+                _run_doctor(
+                    app, _da_settings
+                )
+            )
             return
 
         # ── /init ─────────────────────────
@@ -9922,6 +10762,56 @@ def setup_input_handler(app):
             )
             return
 
+        # ── Custom commands ───────────────
+        if text.startswith("/"):
+            from starry_lib.commands.store import (
+                get_command,
+            )
+            _cmd_name = text[1:].split()[0]
+            _cmd_prompt = get_command(_cmd_name)
+            if _cmd_prompt is not None:
+                _cmd_args = text[
+                    len(_cmd_name) + 2:
+                ].strip()
+                if (
+                    "$ARGUMENTS" in _cmd_prompt
+                    and not _cmd_args
+                ):
+                    append_text(
+                        build_user_frame(
+                            text, _exec_mode
+                        )
+                    )
+                    append_text(
+                        build_error_frame(
+                            f"/{_cmd_name} requires"
+                            " an argument."
+                            " Usage: /"
+                            f"{_cmd_name} <text>"
+                        )
+                    )
+                    app.invalidate()
+                    return
+                _cmd_prompt = _cmd_prompt.replace(
+                    "$ARGUMENTS", _cmd_args
+                )
+                append_text(
+                    build_user_frame(
+                        text, _exec_mode
+                    )
+                )
+                app.invalidate()
+                _ai_task = (
+                    asyncio.ensure_future(
+                        handle_ai_response(
+                            app,
+                            _cmd_prompt,
+                            _da_session,
+                        )
+                    )
+                )
+                return
+
         # ── Unknown slash command ──────────
         if text.startswith("/"):
             append_text(
@@ -10106,6 +10996,11 @@ async def main():
     # Merge user-created roles
     if _da_settings is not None:
         _load_user_roles()
+
+    from starry_lib.commands.store import (
+        seed_builtin_commands,
+    )
+    seed_builtin_commands()
 
     # Apply saved user preferences
     if _da_settings is not None:

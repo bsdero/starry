@@ -19,6 +19,7 @@ class BaseAgent:
     name: str
     label: str
     system_prompt: str
+    role: str = ""
     goal: str = ""
     backstory: str = ""
     constraints: list[str] = field(default_factory=list)

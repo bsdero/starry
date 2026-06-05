@@ -27,7 +27,9 @@ compatible endpoint.
 - **Native skills** — auto-discovered plugins with `descriptor.json` +
   `skill.py` (built-in: `sys_info`, `network_scan`)
 - **Session persistence** — save and restore conversations under
-  `~/.local/starry/sessions/`
+  `~/.local/starry/conf/sessions/`
+- **Custom commands** — user-defined `/` commands stored in
+  `~/.local/starry/conf/commands.json`; support `$ARGUMENTS` substitution
 - **Streaming** — token-by-token streaming with tool-call events
 - **Per-session tool permissions** — whitelist (`allowed_tools`) and blacklist
   (`denied_tools`) per agent
@@ -74,8 +76,8 @@ bash install.sh
 Copy the example env file and fill in your API keys:
 
 ```bash
-cp .env.example ~/.local/starry/.env
-$EDITOR ~/.local/starry/.env
+cp .env.example ~/.local/starry/conf/.env
+$EDITOR ~/.local/starry/conf/.env
 ```
 
 ```env
@@ -86,7 +88,7 @@ OLLAMA_API_KEY=ollama
 ```
 
 Providers, roles, and MCP servers are configured in `config/default.toml`.
-The active provider is set in `~/.local/starry/config.toml` (written by
+The active provider is set in `~/.local/starry/conf/config.toml` (written by
 `/setup` in the TUI).
 
 ---
@@ -104,18 +106,38 @@ starry_cli --session <session_id>
 
 #### TUI commands
 
-| Command     | Description                                 |
-|-------------|---------------------------------------------|
-| `/setup`    | Configure providers, models, tools, themes  |
-| `/agent`    | Create, list, edit, chat with named agents  |
-| `/mode`     | Switch between Plan/Research and Execution  |
-| `/role`     | Switch active agent role                    |
-| `/provider` | Switch active LLM provider                  |
-| `/model`    | Switch active model                         |
-| `/save`     | Save current session                        |
-| `/load`     | Load a saved session                        |
-| `/clear`    | Clear conversation history                  |
-| `/help`     | Show all commands                           |
+Unambiguous 4+-character prefixes are auto-expanded.
+
+| Command           | Description                                        |
+|-------------------|----------------------------------------------------|
+| `/setup`          | Configure providers, models, tools, themes         |
+| `/agent`          | Create, list, edit, chat with named agents         |
+| `/mode`           | Toggle Plan/Research ↔ Execution                   |
+| `/role`           | Switch active agent role                           |
+| `/provider`       | Switch active LLM provider                         |
+| `/model`          | Switch active model                                |
+| `/new`            | Start a fresh conversation (new session ID)        |
+| `/save`           | Save current session to disk immediately           |
+| `/load`           | Open session restore menu (alias for `/sessions`)  |
+| `/sessions`       | Browse and restore saved sessions                  |
+| `/clear`          | Clear conversation history                         |
+| `/rewind`         | Remove last N turns                                |
+| `/summarize`      | Summarise history to free context                  |
+| `/add-dir <path>` | Add a directory to the session context             |
+| `/doctor`         | Health checks: Python, config, provider, MCP       |
+| `/mcp [list\|info]` | List MCP servers or inspect one server's tools   |
+| `/recap`          | Recap what has been discussed and accomplished     |
+| `/review`         | Review recent git changes                          |
+| `/focus <text>`   | Focus the session on a topic                       |
+| `/goal <text>`    | Set the session goal                               |
+| `/project`        | Describe the current project                       |
+| `/branch <name>`  | Work with a git branch                             |
+| `/stats`          | Show token usage and session info                  |
+| `/btw`            | Add background context without triggering LLM      |
+| `/aboutme`        | Store user self-description for the agent          |
+| `/trace`          | Export session trace as NDJSON                     |
+| `/help`           | Show all commands                                  |
+| `/exit`           | Exit the TUI                                       |
 
 ### Library
 
@@ -163,9 +185,10 @@ See `demo_LLM_lib.py` for a full walkthrough of every library feature.
 ```
 starry_lib/
   agents/         — Session, AgentPool, BaseAgent, named agent CRUD
+  commands/       — CRUD for user-defined custom slash commands
+  config/         — Settings loader + runtime path constants
   llm/            — AsyncOpenAI client builder, retry logic
-  config/         — Settings loader (TOML + env vars)
-  tools/          — 19 built-in tools + MCP client + skill loader
+  tools/          — built-in tools + MCP client + skill loader
   skills/         — Auto-discovered native skills (descriptor.json + skill.py)
   sessions/       — JSON session persistence
   context/        — World state injection, context-window manager
@@ -173,7 +196,7 @@ starry_lib/
   observability/  — Per-session NDJSON tracer
 
 starry_cli/
-  main.py         — TUI entry point (~9 000 lines, marker-based rendering)
+  main.py         — TUI entry point (~9 500 lines, marker-based rendering)
   dialogs.py      — Floating menus and text input dialogs
   themes/         — 12 JSON color themes
 ```

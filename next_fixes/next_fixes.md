@@ -19,15 +19,17 @@ If not, get the context_size from the model list API call.
 5.-[COMPLETE] Double check if we have an "/aboutme" option, where the user gives feedback
    about himself.
 
-6.-Double check the command if /btw, /rewind are implemented
+6.-[COMPLETE] Double check the command if /btw, /rewind are implemented
 
 7.-[COMPLETE] Check the command /compact or /summarize it should summarize the context,
    and start a new conversation.
 
-8.-implement the comands /new, /project, /branch, /add-dir, /focus, /goal,
-   /recap, /review
+8.-[COMPLETE] implement the commands /new, /project, /branch, /add-dir, /focus, /goal,
+   /recap, /review, /doctor, /mcp
+   (/vim deferred — not implemented)
+   See next_fixes/plan_commands.md for full implementation plan.
 
-9.-Add infrastructure and commands for the user to define workflow and
+9.-[COMPLETE] Add infrastructure and commands for the user to define workflow and
    commands.
 
 10.-[COMPLETE] Fix the configuration directory in ~/.local/starry. We will use ~/.starry
@@ -49,5 +51,5 @@ one single conversation among all.
 
 15.-[COMPLETE] Remove spaces between the chat frames.
 
-16.-check the names of the agents overrides role name. 
+16.-[COMPLETE] check the names of the agents overrides role name. 
 

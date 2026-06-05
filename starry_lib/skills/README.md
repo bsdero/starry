@@ -1,13 +1,13 @@
 # Native Skills
 
-Each subdirectory under `davyagent/skills/` is a
+Each subdirectory under `starry_lib/skills/` is a
 self-contained skill that is auto-loaded at startup and
 exposed to the agent as an OpenAI-compatible tool call.
 
 ## Directory layout
 
 ```
-davyagent/skills/
+starry_lib/skills/
     <skill_name>/
         descriptor.json   — OpenAI function schema
         skill.py          — execute(**kwargs) -> dict

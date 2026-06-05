@@ -24,10 +24,10 @@ pip install -e ".[dev]"
 pip install -e ".[dev,search]"
 
 # First-time setup: copy env example to user config dir and fill in API keys
-cp .env.example ~/.local/starry/.env
-$EDITOR ~/.local/starry/.env
+cp .env.example ~/.local/starry/conf/.env
+$EDITOR ~/.local/starry/conf/.env
 # Then launch the TUI and use /setup to select a provider
-# (writes active_provider to ~/.local/starry/config.toml)
+# (writes active_provider to ~/.local/starry/conf/config.toml)
 
 # Launch the TUI (two ways after install)
 python -m starry_cli
@@ -55,9 +55,6 @@ pytest tests/unit/test_tools.py -v
 # Run tests that require real API keys
 pytest -m live
 
-# Run slow tests (not excluded by default, but skippable)
-pytest -m slow
-
 # Lint / format
 ruff check . && ruff format .
 
@@ -72,24 +69,27 @@ bash install.sh --uninstall
 
 | Module | Purpose |
 |--------|---------|
-| `config/settings.py` | `load_settings()` → `AppSettings`; walks up from its own path to find `config/default.toml` |
+| `config/paths.py` | `global_conf_dir()` → `~/.local/starry/conf/`; `project_conf_dir()` → `pwd/.starry/` if present; `effective_conf_dirs()` returns both |
+| `config/settings.py` | `load_settings()` → `AppSettings`; merges `config/default.toml` + user conf + project conf |
 | `providers.py` | CRUD for `ProviderConfig` in TOML; `probe_provider()` for connectivity |
 | `llm/client.py` | `build_client(provider)` → `AsyncOpenAI`; `call_with_retry()` for exponential backoff on 429/5xx |
 | `agents/base.py` | `BaseAgent` dataclass; assembles system prompt from structured fields |
 | `agents/session.py` | Single conversation: streaming `chat()`, tool loop, provider/model/role hot-swap |
 | `agents/pool.py` | N concurrent sessions; `broadcast`, `delegate`, `pipeline` patterns |
-| `agents/orchestrator.py` | Simpler single-agent manager without pool overhead; uses raw streaming API directly (Python 3.11-compatible); suitable for scripts |
+| `agents/orchestrator.py` | Simpler single-agent manager without pool overhead; Python 3.11-compatible; suitable for scripts |
 | `agents/roles.py` | `build_agent(role_cfg, provider_cfg)` factory; `build_agent_from_persistent(cfg, settings)` for named agents |
 | `agents/agent_config.py` | `AgentConfig` dataclass — named agent persistence record (pure data, no runtime logic) |
-| `agents/agent_store.py` | CRUD for `~/.local/starry/agents/`; `list_agents()`, `get_agent()`, `save_agent()`, `delete_agent()` |
+| `agents/agent_store.py` | CRUD for `~/.local/starry/conf/agents/`; `list_agents()`, `get_agent()`, `save_agent()`, `delete_agent()` |
 | `agents/active_registry.py` | `ActiveRegistry` — maps agent name → `session_id`; holds per-agent `asyncio.Lock` |
+| `commands/store.py` | CRUD for user-defined custom commands; global file `~/.local/starry/conf/commands.json`; project file `.starry/commands.json` overrides by name |
 | `tools/` | Tool schemas + executors; implementations live in `tools/implementations/` |
 | `tools/tool_loader.py` | `get_tool_schemas(mode)` / `get_tool_executor(mode)`; `wrap_with_cache()` caches read-only tool results and invalidates on writes |
 | `tools/mcp_client.py` | Direct MCP client using the `mcp` package — works on Python 3.11+; reconnects per call (stateless) |
 | `tools/registry.py` | MCP via the `openai-agents` SDK — requires Python 3.12+; emits `RuntimeWarning` on 3.11 |
-| `tools/skill_loader.py` | Auto-discovers `starry_lib/skills/*/` at import; returns cached `SkillTool` list |
+| `tools/skill_loader.py` | Auto-discovers `starry_lib/skills/*/`; `load_skills()` returns cached `SkillTool` list |
 | `skills/` | Auto-discovered native skills (each is a subdirectory with `descriptor.json` + `skill.py`) |
-| `sessions/store.py` | JSON persistence under `~/.local/starry/sessions/<session_id>/session.json` |
+| `prompts/loader.py` | Loads system prompt text files from `starry_lib/prompts/` and the repo-root `prompts/` directory |
+| `sessions/store.py` | JSON persistence under `~/.local/starry/conf/sessions/<id>/session.json` |
 | `observability/trace.py` | Per-session `Tracer`; exports NDJSON |
 | `context/world_state.py` | `build_world_state()` — regenerated per turn (date, cwd, git, OS) |
 | `context/window_manager.py` | `truncate_messages()` — trims message list to token budget (tool results → old turns → hard truncation) |
@@ -116,6 +116,12 @@ session.id         # unique session identifier
 | `chat_with_tools(user_input, schemas, executor)` | Explicit tool list — when you supply your own schemas and executor |
 | `chat_complete(user_input)` | Non-streaming; returns the full response string |
 
+**Other key Session methods:**
+- `switch_provider()`, `set_model()`, `switch_role()` — hot-swap runtime config
+- `inject_system_message(content)` — append system message without triggering LLM turn
+- `clear_history()`, `reset_tokens()`, `rewind()` — history management
+- `new_session()` — reset history/tokens/turn/tool-cache and issue a new session ID; keeps the LLM client
+
 In `starry_cli/main.py`, the three helper functions bridge the brief pre-session startup
 phase (before `pool.spawn()`) and the live session:
 
@@ -124,13 +130,6 @@ _active_provider()   # session.provider or settings fallback
 _active_model()      # session.model or ""
 _active_role()       # session.role or settings fallback
 ```
-
-Runtime switches go through `session.switch_provider()`, `session.set_model()`,
-`session.switch_role()` — these update internal state and emit `display_log` events.
-
-`session.inject_system_message(content)` appends a system-role message to history
-without triggering a new LLM turn (used to notify the main session when a named
-agent is killed).
 
 ### Tools & Skills
 
@@ -156,8 +155,7 @@ Existing tools that don't need it simply ignore the default `{}`.
 - Per-session filtering: `allowed_tools` (whitelist) and `denied_tools` (blacklist)
   applied inside `get_tool_schemas()` / `get_tool_executor()`
 - **Skills** auto-discovered from `starry_lib/skills/*/`; built-in skills are
-  `sys_info` and `network_scan`; invalid skills are logged and skipped, never
-  abort startup
+  `sys_info` and `network_scan`; use `load_skills()` (not `load_all_skills()`)
 - Third-party tools register via the `starry_lib.tools` setuptools entry point
 
 #### Adding a built-in tool
@@ -174,6 +172,26 @@ Existing tools that don't need it simply ignore the default `{}`.
    - `skill.py` — a module with an `execute(**kwargs)` function (sync or async)
 2. `skill_loader.py` auto-discovers it on the next startup; no registration needed.
 
+### Custom Commands
+
+User-defined slash commands are stored as `{name: prompt_string}` entries in JSON files.
+Project file entries override global ones by name.
+
+- Global: `~/.local/starry/conf/commands.json`
+- Project: `.starry/commands.json`
+
+**`$ARGUMENTS` substitution:** if a command prompt contains `$ARGUMENTS`, the TUI
+substitutes everything the user typed after the command name. Commands with
+`$ARGUMENTS` require at least one argument word; the TUI shows an error if the
+user runs them bare.
+
+`seed_builtin_commands()` writes the default built-in commands
+(`recap`, `review`, `focus`, `goal`, `project`, `branch`) to the global file on first
+startup — only if the file does not already exist.
+
+When adding a new built-in TUI command (not a custom command), its name must be added to
+`_BUILTIN_NAMES` in `starry_lib/commands/store.py` so users cannot shadow it.
+
 ### Named Agent System
 
 Named agents are persistent, stateful agent configurations that can be spawned
@@ -184,7 +202,8 @@ into live Sessions and called by the LLM via the `call_agent` tool.
 ```
 Role         — behavior template from config/default.toml [agents.*]
 AgentConfig  — named persistent config (role + provider + model + overrides)
-               stored as ~/.local/starry/agents/<name>.json
+               stored as ~/.local/starry/conf/agents/<name>.json
+               (project agents in .starry/agents/ shadow global ones)
 Active Agent — an AgentConfig with a live Session in the AgentPool
                session_id is always "agent-<name>"
 ```
@@ -244,7 +263,17 @@ Available event hooks: `on_session_start`, `on_session_end`, `on_tool_call`,
 
 ### TUI (`starry_cli/main.py`)
 
-Single ~9 000-line file.
+Single ~9 500-line file. Key landmarks for navigation:
+
+| Symbol | Line | Notes |
+|--------|------|-------|
+| `build_user_frame()` | ~1812 | Renders the user's input as a scroll-buffer frame |
+| `build_inline_notif()` | ~1942 | Info/status line in the scroll buffer |
+| `build_error_frame()` | ~2045 | Error display in the scroll buffer |
+| `make_welcome()` | ~2724 | Generates the welcome banner |
+| `handle_ai_response()` | ~3222 | Main streaming + tool-loop coroutine |
+| `setup_input_handler()` / `accept_handler()` | ~9579 | All command dispatch lives here |
+| `_ALL_COMMANDS` | ~9648 | List for 4+-char prefix auto-expansion |
 
 **TUI commands** (unambiguous 4+-char prefixes are auto-expanded):
 
@@ -256,13 +285,36 @@ Single ~9 000-line file.
 | `/role` | Switch active agent role |
 | `/provider` | Switch active LLM provider |
 | `/model` | Switch active model |
-| `/save` / `/load` | Save / restore session |
+| `/new` | Start a fresh conversation (new session ID, clears history) |
+| `/save` | Save current session to disk immediately |
+| `/load` | Alias for `/sessions` — open session restore menu |
+| `/sessions` | Browse and restore saved sessions |
 | `/clear` | Clear conversation history |
 | `/rewind` | Remove last N turns |
 | `/summarize` | Summarise history to free context |
+| `/compact` | Alias for `/summarize` |
+| `/add-dir <path>` | Add a directory to session context |
+| `/doctor` | Run health checks (Python version, config, provider, MCP, tools) |
+| `/mcp [list\|info <name>]` | List MCP servers or show tools from one server |
+| `/recap` | Custom command: recap the conversation so far |
+| `/review` | Custom command: review recent git changes |
+| `/focus <text>` | Custom command: focus session on a topic ($ARGUMENTS) |
+| `/goal <text>` | Custom command: set session goal ($ARGUMENTS) |
+| `/project` | Custom command: describe the current project |
+| `/branch <name>` | Custom command: work with a git branch ($ARGUMENTS) |
 | `/stats` | Show token usage and session info |
+| `/btw` | Add background context without triggering an LLM response |
+| `/aboutme` | Store user self-description for the agent |
+| `/rename` | Rename the current session |
+| `/trace` | Export session trace as NDJSON |
 | `/help` | Show all commands |
 | `/exit` | Exit the TUI |
+
+**Adding a new built-in TUI command** requires updates in four places:
+1. Handler block in `accept_handler()` (~line 9582)
+2. `_ALL_COMMANDS` list (~line 9648) for prefix auto-expansion
+3. `/help` text builder
+4. `_BUILTIN_NAMES` frozenset in `starry_lib/commands/store.py`
 
 **Key patterns:**
 
@@ -270,9 +322,8 @@ Single ~9 000-line file.
   marker (e.g. `Uf`, `Ac`) that `FrameLexer` parses into color fragments
 - **Layout:** `FloatContainer` → top_bar / tab_bar / body (`DynamicContainer`) /
   bot_bar / input_area
-- **Command dispatch:** `accept_handler()` inside `setup_input_handler()`. Commands
-  start with `/`. A prefix auto-run block at the top of the handler expands unambiguous
-  4+-character prefixes to the full command before dispatch.
+- **Async work in handlers:** use `asyncio.ensure_future(coro())` — never `await`
+  directly inside `accept_handler()` (which is sync)
 - **Themes:** JSON files in `starry_cli/themes/`; active theme loaded into `build_style(mode)`
 - **Dialogs:** `starry_cli/dialogs.py` — floating selection menus and text input dialogs used
   by `/setup`, `/agent`, and all other command menus
@@ -294,27 +345,41 @@ Single ~9 000-line file.
 
 **Config layering** (`load_settings()` merges in order, later wins):
 1. Bundled `config/default.toml` (roles, MCP servers, provider presets)
-2. `~/.local/starry/config.toml` (user overlay — active provider set here by `/setup`)
-3. Project root `.env` (if present), then `~/.local/starry/.env` (wins on conflicts)
+2. `~/.local/starry/conf/config.toml` (user overlay — active provider set here by `/setup`)
+3. `pwd/.starry/config.toml` (project overlay — overrides user config)
+4. Project root `.env` (if present), then `~/.local/starry/conf/.env` (wins on conflicts)
 
-**User data directory** (`~/.local/starry/`):
+**User data directory** (`~/.local/starry/conf/` — returned by `global_conf_dir()`):
 
 | Path | Contents |
 |------|----------|
 | `config.toml` | Active provider; written by `/setup` |
-| `.env` | API keys (`cp .env.example ~/.local/starry/.env`) |
+| `.env` | API keys (`cp .env.example ~/.local/starry/conf/.env`) |
 | `user.json` | TUI preferences: theme, exec mode, context format |
 | `user_roles.json` | User-created role keys (added via `/role`) |
+| `commands.json` | User-defined custom commands; seeded with built-ins on first run |
 | `sessions/<id>/session.json` | Saved conversation sessions |
 | `agents/<name>.json` | Named agent configs (managed by `AgentStore`) |
 
+**Project config directory** (`pwd/.starry/` — returned by `project_conf_dir()`):
+
+Project files override global ones by name. Starry only checks the current working
+directory — no directory tree walk is performed.
+
+| Path | Contents |
+|------|----------|
+| `config.toml` | Project-level provider / role overrides |
+| `commands.json` | Project-specific custom commands (shadow global by name) |
+| `agents/<name>.json` | Project-specific named agents (shadow global by name) |
+| `user_roles.json` | Project-specific role definitions |
+
 ### Session Persistence
 
-Saved sessions live in `~/.local/starry/sessions/<session_id>/session.json`.
+Saved sessions live in `~/.local/starry/conf/sessions/<session_id>/session.json`.
 `list_sessions()`, `save()`, `load()` (accepts full ID or unique prefix) are the
 public interface in `starry_lib/sessions/store.py`.
 
-Named agent configs are stored separately in `~/.local/starry/agents/<name>.json`
+Named agent configs are stored separately in `~/.local/starry/conf/agents/<name>.json`
 (managed by `AgentStore`). Agent sessions are ephemeral — they do not persist
 across TUI restarts.
 

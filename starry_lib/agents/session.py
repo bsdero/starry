@@ -130,7 +130,7 @@ class Session:
     @property
     def role(self) -> str:
         """Active agent role name."""
-        return self._agent.name
+        return self._agent.role or self._agent.name
 
     @property
     def token_usage(self) -> dict:
@@ -1246,6 +1246,26 @@ class Session:
             "completion": 0,
             "total": 0,
         }
+
+    def new_session(self) -> str:
+        """Reset conversation state and issue a
+        new session ID.
+
+        Clears history, zeroes token counters,
+        resets turn count, and returns the new ID.
+        The LLM client and agent config are kept.
+        """
+        import uuid
+        self.clear_history()
+        self.reset_tokens()
+        self._turn = 0
+        self._tool_cache = {}
+        self._display_log = []
+        self._id = (
+            "session-"
+            + uuid.uuid4().hex[:8]
+        )
+        return self._id
 
     def get_context_snapshot(self) -> dict:
         """Read-only snapshot of the current LLM context.

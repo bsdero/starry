@@ -18,7 +18,8 @@
 11. [MCP tool servers and third-party tools](#11-mcp-tool-servers-and-third-party-tools)
 12. [Configuration reference](#12-configuration-reference)
 13. [Named agent system](#13-named-agent-system)
-14. [Troubleshooting](#14-troubleshooting)
+14. [Custom commands](#14-custom-commands)
+15. [Troubleshooting](#15-troubleshooting)
 
 ---
 
@@ -207,7 +208,7 @@ Update `active_provider` in the TOML file. Raises `KeyError` if
 `name` is not an existing provider.
 
 ```python
-sl.set_active_provider("~/.local/starry/config.toml", "openwebui")
+sl.set_active_provider("~/.local/starry/conf/config.toml", "openwebui")
 ```
 
 ### `add_provider(config_path, cfg: ProviderConfig) -> None`
@@ -221,7 +222,7 @@ cfg = sl.make_provider(
     api_key="ollama",
     model="llama3",
 )
-sl.add_provider("~/.local/starry/config.toml", cfg)
+sl.add_provider("~/.local/starry/conf/config.toml", cfg)
 ```
 
 ### `remove_provider(config_path, name) -> None`
@@ -230,7 +231,7 @@ Remove a provider block from the TOML file. Raises `KeyError` if
 not found.
 
 ```python
-sl.remove_provider("~/.local/starry/config.toml", "local")
+sl.remove_provider("~/.local/starry/conf/config.toml", "local")
 ```
 
 ### `make_provider(name, base_url, api_key, model, ssl_verify=True, label="") -> ProviderConfig`
@@ -832,7 +833,7 @@ bad package cannot prevent others from loading.
 |-----|---------|-------------|
 | `active_provider` | `None` | Provider used by default |
 | `active_role` | `"assistant"` | Agent role used by default |
-| `history_file` | `"~/.local/starry/history"` | CLI input history path |
+| `history_file` | `"~/.local/starry/conf/history"` | CLI input history path |
 
 ### `[providers.<name>]`
 
@@ -874,7 +875,7 @@ within a session.
 ### AgentConfig persistence dataclass
 
 Defined in `starry_lib/agents/agent_config.py`.
-Stored as JSON in `~/.local/starry/agents/<name>.json`.
+Stored as JSON in `~/.local/starry/conf/agents/<name>.json`.
 
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
@@ -903,7 +904,7 @@ from starry_lib.agents.agent_store import (
 )
 ```
 
-Storage: `~/.local/starry/agents/<name>.json`
+Storage: `~/.local/starry/conf/agents/<name>.json`
 
 ### ActiveRegistry
 
@@ -975,7 +976,55 @@ See `AGENTS.md` for a full named agent system reference.
 
 ---
 
-## 14. Troubleshooting
+## 14. Custom Commands
+
+User-defined slash commands let you create reusable prompts
+that the TUI executes as if you had typed them out.
+
+### Storage
+
+Custom commands live in JSON files:
+
+| File | Scope |
+|------|-------|
+| `~/.local/starry/conf/commands.json` | Global — applies to all sessions |
+| `.starry/commands.json` | Project — overrides global entries by name |
+
+### `$ARGUMENTS` substitution
+
+If a command's prompt contains `$ARGUMENTS`, whatever the user
+types after the command name replaces the placeholder:
+
+```
+/focus improve test coverage
+# Sends: "For the rest of this session, focus your attention
+#         on: improve test coverage. …"
+```
+
+Commands with `$ARGUMENTS` require at least one argument;
+the TUI displays an error if run without one.
+
+### Built-in custom commands
+
+These are seeded into `~/.local/starry/conf/commands.json`
+on first launch (the file is not overwritten after that):
+
+| Command | Behaviour |
+|---------|-----------|
+| `/recap` | Summarise decisions, changes, and open questions |
+| `/review` | Review recent git changes and flag issues |
+| `/focus <text>` | Focus the session on a topic (`$ARGUMENTS`) |
+| `/goal <text>` | Set the session goal (`$ARGUMENTS`) |
+| `/project` | Describe the current project structure |
+| `/branch <name>` | Work with a git branch (`$ARGUMENTS`) |
+
+Edit `~/.local/starry/conf/commands.json` to change the prompts
+or add your own. Names must match `^[a-zA-Z0-9-]+$` and may
+not shadow built-in TUI commands.
+
+---
+
+## 15. Troubleshooting
 
 ### `RuntimeError: env var 'STARRY_API_KEY' is not set`
 

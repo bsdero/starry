@@ -8,7 +8,7 @@ All public APIs live in that single file unless noted otherwise.
 ## 1. Architecture Overview
 
 ```
-starry_cli/main.py  (~9 000 lines, all TUI logic)
+starry_cli/main.py  (~9 500 lines, all TUI logic)
 ├── Theme engine           starry_cli/themes/loader.py
 ├── StarryLib library      starry_lib/
 └── prompt_toolkit         (full-screen async TUI)
@@ -577,8 +577,10 @@ means `/close` will kill the agent; `owned=False` leaves it alive.
 
 ## 13. Adding a Slash Command
 
-Find the `accept_handler` function inside `setup_input_handler`
-and add a branch before the default LLM dispatch:
+Adding a new built-in slash command requires four updates:
+
+**1. Handler** in `accept_handler()` inside `setup_input_handler()`
+(~line 9582). Add a branch before the default LLM dispatch:
 
 ```python
 # ── /mycommand ────────────────────────
@@ -587,18 +589,36 @@ if text.lower().startswith("/mycommand"):
         build_user_frame(text, _exec_mode)
     )
     arg = text[len("/mycommand"):].strip()
-    # ... do work ...
-    append_text(
-        build_ai_frame(f"Result: {arg}")
-    )
-    app.invalidate()
+    # async work must use ensure_future — never await here
+    asyncio.ensure_future(_my_coro(app, arg))
     return
 ```
 
-Add an entry to `_build_help_md()`:
+**2. `_ALL_COMMANDS` list** (~line 9648) — add the command name
+so 4+-character prefix auto-expansion works:
+
+```python
+_ALL_COMMANDS = [
+    ...
+    "/mycommand",
+    ...
+]
+```
+
+**3. `/help` text** in `_build_help_md()`:
 
 ```python
 "- `/mycommand` — One-line description\n"
+```
+
+**4. `_BUILTIN_NAMES`** in `starry_lib/commands/store.py` — add
+the name so users cannot shadow it with a custom command:
+
+```python
+_BUILTIN_NAMES: frozenset[str] = frozenset({
+    ...,
+    "mycommand",
+})
 ```
 
 ---
@@ -748,3 +768,42 @@ if session:
     async for event in session.chat_auto("Hello"):
         ...
 ```
+
+---
+
+## 20. Custom Command System
+
+User-defined `/` commands are stored as `{name: prompt}` JSON
+entries and dispatched by `accept_handler()` before the built-in
+command block.
+
+**Storage:**
+- Global: `~/.local/starry/conf/commands.json`
+- Project: `.starry/commands.json` (overrides global by name)
+
+**`$ARGUMENTS` substitution:** if the prompt contains
+`$ARGUMENTS`, everything the user typed after the command name
+is substituted in. Commands with `$ARGUMENTS` require at least
+one argument word; the TUI shows an error if run bare.
+
+**API** (`starry_lib/commands/store.py`):
+
+```python
+from starry_lib.commands.store import (
+    list_commands,    # () -> list[{"name", "prompt"}]
+    get_command,      # (name) -> str | None
+    command_exists,   # (name) -> bool
+    validate_name,    # (name) -> error_str | None
+    save_command,     # (name, prompt) -> None  (global file)
+    delete_command,   # (name) -> bool
+    seed_builtin_commands,  # () -> None  (first-run only)
+)
+```
+
+`seed_builtin_commands()` is called at TUI startup. It writes
+the built-in defaults (`recap`, `review`, `focus`, `goal`,
+`project`, `branch`) to the global file only if the file does
+not yet exist — preserving any user edits.
+
+Built-in TUI command names are listed in `_BUILTIN_NAMES`; the
+`validate_name()` function rejects any name that conflicts.
