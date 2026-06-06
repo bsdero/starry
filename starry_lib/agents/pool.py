@@ -14,15 +14,19 @@
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
 # 04/15/2026    bsdero          Initial implementation
+# 06/05/2026    bsdero          Add run_subtask_with_review
 """AgentPool: concurrent multi-agent session manager."""
 
 from __future__ import annotations
 
 import asyncio
 import uuid
+from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
-from typing import AsyncIterator
 
+from pydantic import BaseModel
+
+from starry_lib.agents.debate import Debate
 from starry_lib.agents.roles import build_agent
 from starry_lib.agents.session import Session
 from starry_lib.config.settings import AppSettings, ProviderConfig
@@ -31,6 +35,11 @@ from starry_lib.llm.client import (
     get_model_context_window,
 )
 from starry_lib.types import AgentEvent, SessionInfo
+
+
+class _CriticVerdict(BaseModel):
+    verdict: str  # "PASS" or "FAIL"
+    feedback: str
 
 
 class AgentPool:
@@ -252,6 +261,79 @@ class AgentPool:
         finally:
             await self.terminate(session.id)
 
+    async def run_subtask_with_review(
+        self,
+        prompt: str,
+        role: str | None = None,
+        critic_role: str = "reviewer",
+        max_retries: int = 2,
+        mode: str = "execution",
+    ) -> str:
+        """Spawn worker + critic loop; retry on FAIL.
+
+        Runs the worker up to max_retries + 1 times.
+        Each failed attempt passes the critic's
+        feedback to the worker as revision context.
+        Returns the last result when the critic
+        approves or retries are exhausted.
+
+        Args:
+            prompt: Task prompt for the worker.
+            role: Worker role name.
+            critic_role: Reviewer role for evaluation.
+            max_retries: Maximum retries after the
+                         first run.
+            mode: Execution mode for the worker.
+        """
+        result = ""
+        feedback = ""
+        for attempt in range(max_retries + 1):
+            worker_prompt = prompt
+            if feedback:
+                worker_prompt = (
+                    f"{prompt}\n\n"
+                    "[Revision requested]\n"
+                    f"{feedback}"
+                )
+            session = await self.spawn(
+                role=role, mode=mode
+            )
+            try:
+                result = await session.chat_complete(
+                    worker_prompt
+                )
+            finally:
+                await self.terminate(session.id)
+            if attempt >= max_retries:
+                break
+            critic = None
+            passed = True
+            fb = ""
+            try:
+                critic = await self.spawn(
+                    role=critic_role, mode="plan"
+                )
+                cp = (
+                    f"ORIGINAL TASK:\n{prompt}\n\n"
+                    f"SUBAGENT RESPONSE:\n{result}"
+                )
+                verdict = await critic.chat_structured(
+                    cp, _CriticVerdict
+                )
+                passed = (
+                    verdict.verdict.upper() == "PASS"
+                )
+                fb = verdict.feedback
+            except Exception:
+                pass
+            finally:
+                if critic is not None:
+                    await self.terminate(critic.id)
+            if passed:
+                break
+            feedback = fb
+        return result
+
     # ── Multi-agent patterns ──────────────────────────────────
 
     async def broadcast(
@@ -349,6 +431,44 @@ class AgentPool:
                 sid
             ].chat_complete(current)
         return current
+
+    async def debate(
+        self,
+        agents: list[tuple[str, str]],
+        topic: str,
+        rounds: int = 3,
+    ) -> Debate:
+        """Create a Debate instance for the given agents.
+
+        Validates that all session_ids are registered.
+        Does NOT start the debate — call debate.run()
+        to begin.
+
+        Args:
+            agents: Ordered list of (name, session_id).
+                All session_ids must already be
+                registered in this pool.
+            topic: The debate topic.
+            rounds: Full cycles through all agents.
+
+        Raises:
+            KeyError: if any session_id is not found.
+
+        Returns:
+            A Debate instance ready to run.
+        """
+        for name, sid in agents:
+            if sid not in self._sessions:
+                raise KeyError(
+                    f"Session '{sid}' for agent"
+                    f" '{name}' is not registered."
+                )
+        return Debate(
+            pool=self,
+            agents=agents,
+            topic=topic,
+            rounds=rounds,
+        )
 
     # ── Multi-agent routing ───────────────────────────────────
 

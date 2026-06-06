@@ -43,6 +43,7 @@ _BUILTIN_NAMES: frozenset[str] = frozenset({
     "project", "branch",
     "new", "add-dir", "save", "load",
     "doctor", "mcp",
+    "team",
 })
 
 

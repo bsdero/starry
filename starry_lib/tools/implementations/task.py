@@ -13,6 +13,7 @@
 # BACKLOG:
 # Date m/d/Y    Engineer        Summary
 # 04/17/2026    bsdero          Initial implementation
+# 06/05/2026    bsdero          Add critic_role/max_retries
 """task tool: launch autonomous subagents."""
 
 from __future__ import annotations
@@ -78,6 +79,24 @@ SCHEMA = {
                         "Optional task identifier."
                     ),
                 },
+                "critic_role": {
+                    "type": "string",
+                    "description": (
+                        "If set, a critic agent of "
+                        "this role reviews the "
+                        "result and triggers a "
+                        "retry on FAIL. Omit to "
+                        "skip review."
+                    ),
+                },
+                "max_retries": {
+                    "type": "integer",
+                    "description": (
+                        "Maximum retry attempts "
+                        "after the first run. "
+                        "Default 2."
+                    ),
+                },
             },
             "required": ["subagent_type"],
         },
@@ -91,6 +110,8 @@ async def execute(
     command: str = "",
     task_id: str = "",
     mode: str = "execution",
+    critic_role: str = "",
+    max_retries: int = 2,
 ) -> dict:
     """Run a subagent via AgentPool and return
     its response. Falls back to a stub dict if
@@ -109,11 +130,22 @@ async def execute(
             f"{prompt}\n\nCommand: {command}"
         )
     try:
-        result = await _pool.run_subtask(
-            full_prompt,
-            role=subagent_type,
-            mode=mode,
-        )
+        if critic_role:
+            result = (
+                await _pool.run_subtask_with_review(
+                    full_prompt,
+                    role=subagent_type,
+                    critic_role=critic_role,
+                    max_retries=max_retries,
+                    mode=mode,
+                )
+            )
+        else:
+            result = await _pool.run_subtask(
+                full_prompt,
+                role=subagent_type,
+                mode=mode,
+            )
         return {
             "type": "subagent_result",
             "task_id": tid,

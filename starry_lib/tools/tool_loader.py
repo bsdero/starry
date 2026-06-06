@@ -142,7 +142,7 @@ def get_tool_schemas(
     """Return OpenAI function schemas for the mode."""
     tools = (
         _exec_tools()
-        if mode == "execution"
+        if mode in ("execution", "deep")
         else _plan_tools()
     )
     return [t.SCHEMA for t in tools]
@@ -154,7 +154,7 @@ def get_tool_executor(
     """Return name→execute mapping for the mode."""
     tools = (
         _exec_tools()
-        if mode == "execution"
+        if mode in ("execution", "deep")
         else _plan_tools()
     )
     return {

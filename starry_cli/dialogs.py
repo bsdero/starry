@@ -511,6 +511,174 @@ def show_input_dialog(
 
 
 # ──────────────────────────────────────────────
+# show_input_with_preview_dialog
+# ──────────────────────────────────────────────
+
+# CSS class for the read-only section label —
+# must match "preview-label" in build_style().
+_SRL = "class:preview-label"
+
+
+def _ro_label_row(iw, text):
+    """One row of read-only-styled label text."""
+    pad = f" {text}".ljust(iw)
+    return _win([
+        (_SF, VT),
+        (_SRL, pad[:iw]),
+        (_SF, VT),
+    ])
+
+
+def _ro_label_rows(iw, text):
+    """Wrapped read-only label rows for text."""
+    usable = iw - 2
+    lines = _wrap_text(text, usable)
+    return [
+        _ro_label_row(iw, ln) for ln in lines
+    ]
+
+
+def show_input_with_preview_dialog(
+    app,
+    title,
+    preview_text,
+    preview_label,
+    label,
+    on_confirm,
+    on_cancel=None,
+    initial_text="",
+    preview_height=10,
+    field_height=8,
+    width=80,
+    refocus=None,
+):
+    """Two-field dialog: read-only preview above
+    an editable text area.
+
+    preview_text  — content of the read-only field;
+                    focusable and scrollable.
+    preview_label — label shown above the preview.
+    label         — label shown above the editable
+                    field.
+    on_confirm(text: str) — called with the editable
+                    field text on Submit.
+    on_cancel()   — optional, called on Cancel.
+    """
+    f_ref = [None]
+    iw = width - 2
+    margin = 2
+    fiw = iw - margin * 2 - 2
+    ph = preview_height
+    fh = field_height
+
+    # Precompute labels so we can cap heights
+    # before creating the TextArea widgets.
+    ro_lbl = (
+        _ro_label_rows(iw, preview_label)
+        if preview_label else []
+    )
+    ed_lbl = (
+        _label_rows(iw, label)
+        if label else []
+    )
+    n_ro = len(ro_lbl)
+    n_ed = len(ed_lbl)
+
+    # Cap ph/fh so the dialog fits the terminal.
+    # Fixed overhead: 11 rows + label rows.
+    fixed_h = (
+        11
+        + (n_ro + 1 if n_ro else 0)
+        + (n_ed + 1 if n_ed else 0)
+    )
+    term_rows = shutil.get_terminal_size().lines
+    avail = term_rows - 4
+    if ph + fh > avail - fixed_h:
+        budget = max(5, avail - fixed_h)
+        fh = max(2, budget * fh // (ph + fh))
+        ph = max(2, budget - fh)
+
+    preview = TextArea(
+        multiline=True,
+        scrollbar=True,
+        focusable=True,
+        read_only=True,
+        style="class:text-area-readonly",
+        height=ph,
+        text=preview_text,
+    )
+
+    field = TextArea(
+        multiline=True,
+        scrollbar=True,
+        focusable=True,
+        style="class:text-area",
+        height=fh,
+        text=initial_text,
+    )
+
+    def _confirm():
+        text = field.text.strip()
+        _pop(app, f_ref[0], refocus)
+        if on_confirm:
+            on_confirm(text)
+
+    def _cancel():
+        _pop(app, f_ref[0], refocus)
+        if on_cancel:
+            on_cancel()
+
+    rows = [_top_border(iw, title), _pad_row(iw)]
+
+    if ro_lbl:
+        rows += ro_lbl + [_pad_row(iw)]
+
+    rows += [
+        _inner_top(iw, fiw, margin),
+        VSplit([
+            _vt_win(ph), _gap(margin, ph),
+            _vt_win(ph), preview,
+            _vt_win(ph), _gap(margin, ph),
+            _vt_win(ph),
+        ], style=_SD),
+        _inner_bot(iw, fiw, margin),
+        _pad_row(iw),
+    ]
+
+    if ed_lbl:
+        rows += ed_lbl + [_pad_row(iw)]
+
+    rows += [
+        _inner_top(iw, fiw, margin),
+        VSplit([
+            _vt_win(fh), _gap(margin, fh),
+            _vt_win(fh), field,
+            _vt_win(fh), _gap(margin, fh),
+            _vt_win(fh),
+        ], style=_SD),
+        _inner_bot(iw, fiw, margin),
+        _pad_row(iw),
+        _make_btn_row(iw, [
+            _btn(" Cancel ", _cancel, 12),
+            _btn(" Submit ", _confirm, 12),
+        ]),
+        _pad_row(iw),
+        _bot_border(iw),
+    ]
+
+    container = HSplit(rows, style=_SD, width=width)
+    h = (
+        11 + ph + fh
+        + (n_ro + 1 if n_ro else 0)
+        + (n_ed + 1 if n_ed else 0)
+    )
+    fl = _centered_float(container, width, h)
+    f_ref[0] = fl
+    _push(app, fl, _cancel)
+    app.layout.focus(field)
+
+
+# ──────────────────────────────────────────────
 # show_menu_dialog
 # ──────────────────────────────────────────────
 
@@ -539,7 +707,18 @@ def show_menu_dialog(
         width = _auto_width(options, title)
     ns = _NavState(options)
     iw = width - 2
-    mv = max_visible  # None = no cap
+    mv = max_visible
+    # Cap to terminal height: h = 9 + mv must
+    # fit in term_rows - 4 (margins).
+    _term_cap = max(
+        3,
+        shutil.get_terminal_size().lines - 13,
+    )
+    if mv is None:
+        if len(options) > _term_cap:
+            mv = _term_cap
+    else:
+        mv = min(mv, _term_cap)
 
     def _confirm():
         idx = ns.selected
@@ -754,6 +933,15 @@ def show_toggle_dialog(
                 ns.checked[i] = True
     iw = width - 2
     mv = max_visible
+    _term_cap = max(
+        3,
+        shutil.get_terminal_size().lines - 13,
+    )
+    if mv is None:
+        if len(items) > _term_cap:
+            mv = _term_cap
+    else:
+        mv = min(mv, _term_cap)
 
     def _confirm():
         checked = ns.checked_indices()

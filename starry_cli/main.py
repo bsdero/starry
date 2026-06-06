@@ -123,6 +123,9 @@ WHITE       = _theme["white"]
 ERROR_RED   = _theme["error_red"]
 MODE_CLR_EXEC = _theme["text_mode_execution"]
 MODE_CLR_PLAN = _theme["text_mode_plan"]
+MODE_CLR_DEEP = _theme.get(
+    "text_mode_deep", "#cc2200"
+)
 
 VERSION = "v0.2.0-alpha"
 
@@ -188,14 +191,16 @@ def build_style(mode: str = "execution") -> Style:
     """Build a prompt_toolkit Style for the given mode.
 
     User frame and input colors reflect the active
-    execution mode (execution=orange, plan=blue-white).
+    execution mode (execution=theme, plan=blue,
+    deep=red).
     Called at startup and on every mode switch.
     """
-    mc = (
-        MODE_CLR_EXEC
-        if mode == "execution"
-        else MODE_CLR_PLAN
-    )
+    if mode == "execution":
+        mc = MODE_CLR_EXEC
+    elif mode == "deep":
+        mc = MODE_CLR_DEEP
+    else:
+        mc = MODE_CLR_PLAN
     return Style.from_dict(
         {
             "": f"{TEXT} bg:{BG_DEEP}",
@@ -253,6 +258,9 @@ def build_style(mode: str = "execution") -> Style:
             "bot-bar.net": (
                 f"{ACCENT_2} bg:{BG_PANEL}"
             ),
+            "bot-bar.roundtable": (
+                f"bold {ACCENT_2} bg:{BG_PANEL}"
+            ),
             # Input (mode-dependent color)
             "input-area": (
                 f"{mc} bg:{BG_DEEP}"
@@ -290,6 +298,12 @@ def build_style(mode: str = "execution") -> Style:
             ),
             "line.ucontent_exec": (
                 f"bold {MODE_CLR_EXEC}"
+            ),
+            "line.uframe_deep": (
+                f"{MODE_CLR_DEEP}"
+            ),
+            "line.ucontent_deep": (
+                f"bold {MODE_CLR_DEEP}"
             ),
             "line.utext": f"{WHITE}",
             "line.aframe": f"{BORDER}",
@@ -389,6 +403,17 @@ def build_style(mode: str = "execution") -> Style:
             "text-area focused": (
                 f"{WHITE} bg:{BG_SCROLL}"
             ),
+            # Read-only preview field
+            "text-area-readonly": (
+                f"{MUTED} bg:{BG_PANEL}"
+            ),
+            "text-area-readonly focused": (
+                f"{DIM_TEXT} bg:{BG_PANEL}"
+            ),
+            # Label above the read-only field
+            "preview-label": (
+                f"{MUTED} bg:{BG_DEEP}"
+            ),
         }
     )
 
@@ -438,6 +463,7 @@ M_WCONTENT = "Wc"
 # at render time, does not repaint on mode switch)
 M_UPLAN = "UP"
 M_UEXEC = "UX"
+M_UDEEP = "UD"
 
 MARKER_STYLE = {
     M_UFRAME: "class:line.uframe",
@@ -461,6 +487,7 @@ MARKER_STYLE = {
     M_WCONTENT: "class:line.wcontent",
     M_UPLAN: "class:line.uframe_plan",
     M_UEXEC: "class:line.uframe_exec",
+    M_UDEEP: "class:line.uframe_deep",
 }
 
 
@@ -530,6 +557,13 @@ class FrameLexer(Lexer):
                     line, marker,
                     "class:line.uframe_exec",
                     "class:line.ucontent_exec",
+                )
+
+            if marker == M_UDEEP:
+                return _split_borders(
+                    line, marker,
+                    "class:line.uframe_deep",
+                    "class:line.ucontent_deep",
                 )
 
             if marker in _AI_CONTENT_MARKERS:
@@ -786,6 +820,7 @@ def _save_user_prefs() -> None:
         "model": _active_model(),
         "role": _active_role(),
         "theme": _cur_theme,
+        "exec_mode": _exec_mode,
         "context_format": _context_format,
         "autosum_enabled": _autosum_enabled,
         "autosum_threshold": _autosum_threshold,
@@ -870,6 +905,7 @@ def _apply_theme(name: str) -> None:
     global CODE_INL_BG, MUTED, DIM_TEXT
     global WHITE, ERROR_RED
     global MODE_CLR_EXEC, MODE_CLR_PLAN
+    global MODE_CLR_DEEP
     global _cur_theme
     try:
         t = load_theme(name)
@@ -889,6 +925,9 @@ def _apply_theme(name: str) -> None:
         ERROR_RED     = t["error_red"]
         MODE_CLR_EXEC = t["text_mode_execution"]
         MODE_CLR_PLAN = t["text_mode_plan"]
+        MODE_CLR_DEEP = t.get(
+            "text_mode_deep", "#cc2200"
+        )
         _cur_theme    = name
     except Exception:
         pass
@@ -964,6 +1003,10 @@ _da_pool = None                # da.AgentPool
 _ai_task = None                # active LLM asyncio.Task
 _session_stack: list = []      # agent routing stack
 _active_registry = None        # ActiveRegistry
+_roundtable = None             # Roundtable | None
+_rt_room_buf = None            # room Buffer | None
+_debate = None                 # Debate | None
+_debate_room_buf = None        # debate room Buffer | None
 
 
 # ── Session-state accessors ────────────────────────
@@ -1593,23 +1636,31 @@ def get_bot_bar():
     parts.append(
         ("class:bot-bar.label", " │ ")
     )
-    if _session_stack:
-        _bot_rlabel = (
-            "agent "
-        )
-        _bot_rval = (
-            _session_stack[-1]["name"][:10]
-            or "—"
-        )
+    if _roundtable is not None:
+        _n = len(_roundtable.agent_names)
+        parts.append((
+            "class:bot-bar.label", "room "
+        ))
+        parts.append((
+            "class:bot-bar.roundtable",
+            f"ROUNDTABLE({_n})",
+        ))
+    elif _session_stack:
+        parts.append((
+            "class:bot-bar.label", "agent "
+        ))
+        parts.append((
+            "class:bot-bar.version",
+            _session_stack[-1]["name"][:10] or "—",
+        ))
     else:
-        _bot_rlabel = "role "
-        _bot_rval = _active_role()[:10] or "—"
-    parts.append((
-        "class:bot-bar.label", _bot_rlabel
-    ))
-    parts.append((
-        "class:bot-bar.version", _bot_rval
-    ))
+        parts.append((
+            "class:bot-bar.label", "role "
+        ))
+        parts.append((
+            "class:bot-bar.version",
+            _active_role()[:10] or "—",
+        ))
     parts.append(
         ("class:bot-bar.label", " │ ")
     )
@@ -1821,11 +1872,12 @@ def build_user_frame(
     w = frame_width()
     inner = w - 2
     ts = datetime.now().strftime("%H:%M:%S")
-    fm = (
-        M_UEXEC
-        if mode == "execution"
-        else M_UPLAN
-    )
+    if mode == "execution":
+        fm = M_UEXEC
+    elif mode == "deep":
+        fm = M_UDEEP
+    else:
+        fm = M_UPLAN
 
     lines = []
     # Top with timestamp in label
@@ -2687,6 +2739,24 @@ def append_tool_output(text):
             break
 
 
+def _append_room(text):
+    """Append plain text to the room buffer.
+
+    Does nothing if the room buffer does not exist.
+    """
+    if _rt_room_buf is not None:
+        _buf_append(_rt_room_buf, text)
+
+
+def _append_debate_room(text):
+    """Append plain text to the debate room buffer.
+
+    Does nothing if the debate buffer does not exist.
+    """
+    if _debate_room_buf is not None:
+        _buf_append(_debate_room_buf, text)
+
+
 def append_log(text):
     """Append plain text to Logs tab."""
     _buf_append(logs_buffer, text)
@@ -3058,6 +3128,62 @@ def _close_agent_bufs(name):
     )
 
 
+def _spawn_roundtable_bufs(app, agent_names):
+    """Create Room tab and per-agent buffers.
+
+    Creates a read-only Room buffer registered as
+    'roundtable:room' and adds a Room tab.
+    For each agent name that has no buffer yet,
+    calls _spawn_agent_bufs() to create one.
+    Switches the active tab to the Room tab.
+    Returns the room Buffer object.
+    """
+    from prompt_toolkit.buffer import Buffer
+    room_buf = Buffer(
+        name="roundtable_room",
+        read_only=True,
+    )
+    buf_reg.register("roundtable:room", room_buf)
+    room_tab = Tab(
+        "Room", room_buf, read_only=True
+    )
+    tab_mgr.tabs.append(room_tab)
+    tab_mgr.active = len(tab_mgr.tabs) - 1
+    for name in agent_names:
+        if _agent_chat_buf(name) is None:
+            _spawn_agent_bufs(app, name)
+    app.invalidate()
+    return room_buf
+
+
+def _spawn_debate_bufs(app, agent_names):
+    """Create Debate Room tab and spawn agent bufs.
+
+    Creates a read-only Debate Room buffer registered
+    as 'debate:room' and adds a Debate Room tab.
+    For each agent name that has no buffer yet,
+    calls _spawn_agent_bufs() to create one.
+    Switches the active tab to the Debate Room tab.
+    Returns the room Buffer object.
+    """
+    from prompt_toolkit.buffer import Buffer
+    room_buf = Buffer(
+        name="debate_room",
+        read_only=True,
+    )
+    buf_reg.register("debate:room", room_buf)
+    room_tab = Tab(
+        "Debate Room", room_buf, read_only=True
+    )
+    tab_mgr.tabs.append(room_tab)
+    tab_mgr.active = len(tab_mgr.tabs) - 1
+    for name in agent_names:
+        if _agent_chat_buf(name) is None:
+            _spawn_agent_bufs(app, name)
+    app.invalidate()
+    return room_buf
+
+
 async def _do_kill_agent(app, name):
     """Kill agent session and close TUI buffers."""
     global _active_registry
@@ -3214,6 +3340,169 @@ async def handle_agent_response(
                 pass
         telemetry.ai_status = "idle"
         app.invalidate()
+
+
+async def handle_roundtable_response(
+    app, user_text, target=None
+):
+    """Stream responses from all roundtable agents.
+
+    Calls _roundtable.post() and routes each event:
+    - "token" events are accumulated per agent.
+    - "done" events write the full response to the
+      room buffer and record it in the transcript.
+    - "error" events write an error line to the room.
+    Records the user message to the transcript AFTER
+    all agents have responded, so format_context()
+    inside post() sees only the prior history.
+    """
+    global _roundtable, _rt_room_buf
+    if _roundtable is None or _rt_room_buf is None:
+        return
+
+    _append_room(f"\n[You]: {user_text}\n")
+    app.invalidate()
+
+    accumulated: dict[str, str] = {}
+
+    async for event in _roundtable.post(
+        user_text, target
+    ):
+        name = _roundtable.get_name_for_sid(
+            event.session_id
+        )
+        if name is None:
+            continue
+        if event.type == "token":
+            accumulated[name] = (
+                accumulated.get(name, "")
+                + str(event.data)
+            )
+        elif event.type == "done":
+            full = str(event.data) or (
+                accumulated.get(name, "")
+            )
+            accumulated[name] = full
+            _append_room(
+                f"[{name}]: {full}\n"
+            )
+            _roundtable.record_response(
+                name, full
+            )
+            app.invalidate()
+        elif event.type == "error":
+            _append_room(
+                f"[{name} error]: {event.data}\n"
+            )
+            app.invalidate()
+
+    _roundtable.record_user(user_text)
+    app.invalidate()
+
+
+async def handle_debate_response(app):
+    """Drive the debate loop and render to room buffer.
+
+    Iterates debate.run() and routes each event:
+    - token: accumulate per session_id (not rendered)
+    - done with data="__debate_complete__": debate over
+    - done with agent data: write [name]: text to room
+    - error: write error line to room buffer
+    """
+    global _debate, _debate_room_buf
+    if _debate is None or _debate_room_buf is None:
+        return
+
+    accumulated: dict[str, str] = {}
+
+    async for event in _debate.run():
+        if event.type == "token":
+            accumulated[event.session_id] = (
+                accumulated.get(
+                    event.session_id, ""
+                )
+                + str(event.data)
+            )
+        elif event.type == "done":
+            if event.data == "__debate_complete__":
+                _append_debate_room(
+                    "\n--- Debate complete ---\n"
+                )
+                app.invalidate()
+                _offer_debate_synthesis(app)
+                return
+            name = _debate.get_name_for_sid(
+                event.session_id
+            )
+            if name is None:
+                continue
+            full = str(event.data) or (
+                accumulated.get(
+                    event.session_id, ""
+                )
+            )
+            _append_debate_room(
+                f"\n[{name}]: {full}\n"
+            )
+            app.invalidate()
+        elif event.type == "error":
+            name = _debate.get_name_for_sid(
+                event.session_id
+            ) or "agent"
+            _append_debate_room(
+                f"[{name} error]: {event.data}\n"
+            )
+            app.invalidate()
+
+
+def _offer_debate_synthesis(app):
+    """Ask if user wants a synthesis summary.
+
+    Shows a Yes/No button dialog. If Yes, spawns
+    a throwaway agent to summarize the debate
+    transcript.
+    """
+    global _debate
+    if _debate is None:
+        return
+
+    transcript_text = _debate.format_context(
+        limit=200
+    )
+
+    def _on_button(idx):
+        if idx != 0:  # 0 = Yes, 1 = No
+            return
+        if _da_pool is None:
+            return
+
+        async def _do_synthesis():
+            prompt = (
+                "Summarize the following debate"
+                " and identify the strongest"
+                " arguments on each side:\n\n"
+                f"{transcript_text}"
+            )
+            summary = await _da_pool.run_subtask(
+                prompt, mode="plan"
+            )
+            _append_debate_room(
+                f"\n[Synthesis]:\n{summary}\n"
+            )
+            app.invalidate()
+
+        asyncio.ensure_future(_do_synthesis())
+
+    _dlg.show_button_dialog(
+        app,
+        title="Debate complete",
+        message=(
+            "Would you like a synthesis summary?"
+        ),
+        buttons=["Yes", "No"],
+        on_button=_on_button,
+        refocus=input_area,
+    )
 
 
 # ===================================================
@@ -4098,8 +4387,11 @@ def _edit_default_temperature(app) -> None:
     """Dialog to set the default temperature."""
     global _default_temperature
     label = (
-        "TEMPERATURE: Sampling randomness"
-        " (0.0 = focused, 2.0 = creative)."
+        "Temperature: sampling randomness."
+        " 0.0 = precise/focused,"
+        " 2.0 = creative/random."
+        " e.g. 0.2 for code or analysis,"
+        " 0.9 for brainstorming."
         " Role values override this default."
     )
     if _default_temperature is not None:
@@ -5804,7 +6096,11 @@ def _role_create(app):
             app,
             title="Temperature (3/5)",
             label=(
-                "Sampling randomness 0.0–2.0."
+                "Temperature: sampling randomness."
+                " 0.0 = precise/focused,"
+                " 2.0 = creative/random."
+                " e.g. 0.2 for code or analysis,"
+                " 0.9 for brainstorming."
                 " Leave blank for default."
             ),
             on_confirm=_on_confirm,
@@ -6068,7 +6364,11 @@ def _role_update(app):
                 app,
                 title="Temperature (3/5)",
                 label=(
-                    "Sampling randomness 0.0–2.0."
+                    "Temperature: sampling randomness."
+                    " 0.0 = precise/focused,"
+                    " 2.0 = creative/random."
+                    " e.g. 0.2 for code or analysis,"
+                    " 0.9 for brainstorming."
                     " Blank = default."
                 ),
                 on_confirm=_on_confirm,
@@ -7738,10 +8038,13 @@ def handle_ctrl_p(event):
     """Toggle plan/execution mode."""
     global _exec_mode
     old_mode = _exec_mode
-    _exec_mode = (
-        "plan"
-        if _exec_mode == "execution"
-        else "execution"
+    _cycle = {
+        "execution": "deep",
+        "deep": "plan",
+        "plan": "execution",
+    }
+    _exec_mode = _cycle.get(
+        _exec_mode, "execution"
     )
     event.app.style = build_style(_exec_mode)
     append_text(
@@ -8985,6 +9288,8 @@ def _agent_create(app):
                 models = [pcfg.default_model]
             _avail_models[pname] = models
         options = ["(default)"] + models
+        term_rows = shutil.get_terminal_size().lines
+        mv = max(5, term_rows - 12)
         _dlg.show_menu_dialog(
             app,
             title="Create Agent — Model",
@@ -8993,6 +9298,7 @@ def _agent_create(app):
                 "" if i == 0 else models[i - 1]
             ),
             refocus=input_area,
+            max_visible=mv,
         )
 
     def _got_model(model):
@@ -9000,42 +9306,80 @@ def _agent_create(app):
         _step5()
 
     def _step5():
-        header = (
-            f"# Role: {_d['role']}"
-            " — your text below is"
-            " appended to the role's"
-            " system prompt\n\n"
+        if _da_settings is None:
+            return
+        rcfg = _da_settings.agents.get(
+            _d["role"]
         )
-        _dlg.show_input_dialog(
+        role_sp = (
+            (rcfg.system_prompt or "").strip()
+            if rcfg else ""
+        )
+        _dlg.show_input_with_preview_dialog(
             app,
             title="Create Agent — Prompt addon",
-            label=(
-                "Appended to the role's"
-                " system prompt at spawn."
-                " Add custom instructions"
-                " below the comment line:"
+            preview_text=role_sp,
+            preview_label=(
+                f"Role '{_d['role']}'"
+                " system prompt"
+                "  ·  read-only"
+                " (scroll with arrows)"
             ),
-            initial_text=header,
+            label=(
+                "Your addon — appended to"
+                " the role prompt at spawn."
+                " The role prompt above"
+                " cannot be changed here;"
+                " write only your extra"
+                " instructions below:"
+            ),
             on_confirm=_got_prompt,
-            multiline=True,
-            field_height=8,
             refocus=input_area,
         )
 
     def _got_prompt(prompt):
-        _d["system_prompt_addon"] = (
-            _strip_addon_header(prompt)
-        )
+        _d["system_prompt_addon"] = prompt
         _step6()
 
     def _step6():
+        if _da_settings is None:
+            return
+        rcfg = _da_settings.agents.get(
+            _d["role"]
+        )
+        role_t = (
+            rcfg.temperature
+            if rcfg is not None
+            else None
+        )
+        init_t = (
+            str(role_t)
+            if role_t is not None
+            else ""
+        )
+        role_hint = (
+            f" Role '{_d['role']}'"
+            f" default: {role_t}."
+            if role_t is not None
+            else (
+                f" Role '{_d['role']}'"
+                " sets no temperature."
+            )
+        )
         _dlg.show_input_dialog(
             app,
             title="Create Agent — Temperature",
             label=(
-                "Temperature"
-                " (blank = role default):"
+                "Sampling randomness:"
+                " 0.0 = precise/focused,"
+                " 2.0 = creative/random."
+                f"{role_hint}"
+                " Pre-filled with the role"
+                " default. Edit to override,"
+                " or clear it"
+                " (empty/0 = role default)."
             ),
+            initial_text=init_t,
             on_confirm=_got_temp,
             refocus=input_area,
         )
@@ -9194,6 +9538,8 @@ def _agent_edit(app):
             _d["model"] = chosen
             _edit_prompt()
 
+        term_rows = shutil.get_terminal_size().lines
+        mv = max(5, term_rows - 12)
         _dlg.show_menu_dialog(
             app,
             title=(
@@ -9203,44 +9549,81 @@ def _agent_edit(app):
             options=options,
             on_select=_on_select,
             refocus=input_area,
+            max_visible=mv,
         )
 
     def _edit_prompt():
-        header = (
-            f"# Role: {_d['role']}"
-            " — your text below is"
-            " appended to the role's"
-            " system prompt\n\n"
+        if _da_settings is None:
+            return
+        rcfg = _da_settings.agents.get(
+            _d["role"]
+        )
+        role_sp = (
+            (rcfg.system_prompt or "").strip()
+            if rcfg else ""
         )
         existing = _d.get(
             "system_prompt_addon", ""
         )
-        _dlg.show_input_dialog(
+        _dlg.show_input_with_preview_dialog(
             app,
             title=(
                 f"Edit {_d['name']}"
                 " — Prompt addon"
             ),
+            preview_text=role_sp,
+            preview_label=(
+                f"Role '{_d['role']}'"
+                " system prompt"
+                "  ·  read-only"
+                " (scroll with arrows)"
+            ),
             label=(
-                "Appended to the role's"
-                " system prompt at spawn."
-                " Edit your custom"
+                "Your addon — appended to"
+                " the role prompt at spawn."
+                " The role prompt above"
+                " cannot be changed here;"
+                " edit only your extra"
                 " instructions below:"
             ),
-            initial_text=header + existing,
+            initial_text=existing,
             on_confirm=_save_prompt,
-            multiline=True,
-            field_height=8,
             refocus=input_area,
         )
 
     def _save_prompt(v):
-        _d["system_prompt_addon"] = (
-            _strip_addon_header(v)
-        )
+        _d["system_prompt_addon"] = v
         _edit_temp()
 
     def _edit_temp():
+        rcfg = (
+            _da_settings.agents.get(_d["role"])
+            if _da_settings else None
+        )
+        role_t = (
+            rcfg.temperature
+            if rcfg is not None
+            else None
+        )
+        stored = _d.get("temperature", 0.0)
+        init_t = (
+            str(stored)
+            if stored and stored > 0.0
+            else (
+                str(role_t)
+                if role_t is not None
+                else ""
+            )
+        )
+        role_hint = (
+            f" Role '{_d['role']}'"
+            f" default: {role_t}."
+            if role_t is not None
+            else (
+                f" Role '{_d['role']}'"
+                " sets no temperature."
+            )
+        )
         _dlg.show_input_dialog(
             app,
             title=(
@@ -9248,12 +9631,16 @@ def _agent_edit(app):
                 " — Temperature"
             ),
             label=(
-                "Temperature"
-                " (0 = role default):"
+                "Sampling randomness:"
+                " 0.0 = precise/focused,"
+                " 2.0 = creative/random."
+                f"{role_hint}"
+                " Pre-filled with the"
+                " current value. Edit to"
+                " override, or clear it"
+                " (empty/0 = role default)."
             ),
-            initial_text=str(
-                _d["temperature"]
-            ),
+            initial_text=init_t,
             on_confirm=_save_temp,
             refocus=input_area,
         )
@@ -9397,6 +9784,120 @@ def _agent_chat_start(app):
         options=names,
         on_select=_pick,
         refocus=input_area,
+    )
+
+
+async def _do_start_roundtable(app, names):
+    """Spawn named agents and open the Room tab.
+
+    Called by the /team command handler.
+    Spawns each agent in names if not yet active,
+    builds the session_map, creates the Roundtable,
+    and opens the Room buffer.
+    """
+    global _roundtable, _rt_room_buf
+    global _active_registry
+    if _active_registry is None:
+        from starry_lib.agents.active_registry\
+            import ActiveRegistry
+        _active_registry = ActiveRegistry()
+        _init_agent_tools()
+    session_map = {}
+    for name in names:
+        try:
+            if not _active_registry.is_active(name):
+                await _active_registry.spawn_agent(
+                    name,
+                    _da_pool,
+                    _da_settings,
+                )
+        except Exception as exc:
+            append_text(
+                build_error_frame(
+                    f"Cannot spawn '{name}': {exc}"
+                )
+            )
+            app.invalidate()
+            return
+        session_map[name] = f"agent-{name}"
+    from starry_lib.agents.roundtable import (
+        Roundtable,
+    )
+    _roundtable = Roundtable(_da_pool, session_map)
+    _rt_room_buf = _spawn_roundtable_bufs(
+        app, list(session_map.keys())
+    )
+    joined = ", ".join(names)
+    _append_room(
+        f"Roundtable started with: {joined}\n"
+        "Type a message to address all agents.\n"
+        "Type @name message to target one agent.\n"
+        "Type /close to exit.\n"
+    )
+    app.invalidate()
+
+
+async def _do_start_debate(
+    app, names, topic, rounds
+):
+    """Spawn named agents and open the Debate Room tab.
+
+    Called by the /team command handler.
+    Spawns each agent in names if not yet active,
+    builds the agents list, creates the Debate,
+    and opens the Debate Room buffer.
+
+    Args:
+        app: The prompt_toolkit Application.
+        names: list[str] of agent names.
+        topic: The debate topic string.
+        rounds: Number of full cycles (int >= 1).
+    """
+    global _debate, _debate_room_buf
+    global _active_registry
+    if _active_registry is None:
+        from starry_lib.agents.active_registry\
+            import ActiveRegistry
+        _active_registry = ActiveRegistry()
+        _init_agent_tools()
+    for name in names:
+        try:
+            if not _active_registry.is_active(name):
+                await _active_registry.spawn_agent(
+                    name,
+                    _da_pool,
+                    _da_settings,
+                )
+        except Exception as exc:
+            append_text(
+                build_error_frame(
+                    f"Cannot spawn '{name}': {exc}"
+                )
+            )
+            app.invalidate()
+            return
+
+    agents = [
+        (name, f"agent-{name}") for name in names
+    ]
+    _debate = await _da_pool.debate(
+        agents, topic, rounds
+    )
+    _debate_room_buf = _spawn_debate_bufs(
+        app, names
+    )
+    joined = ", ".join(names)
+    _append_debate_room(
+        f"Debate started — topic: {topic}\n"
+        f"Participants: {joined}\n"
+        f"Rounds: {rounds}\n"
+        "Type a message to inject into the debate.\n"
+        "Type /close to exit.\n"
+        "─" * 40 + "\n"
+    )
+    app.invalidate()
+    asyncio.ensure_future(
+        handle_debate_response(app)
     )
 
 
@@ -9601,6 +10102,58 @@ def setup_input_handler(app):
             app.invalidate()
             return
 
+        # ── Roundtable routing ────────────
+        global _roundtable, _rt_room_buf
+        if _roundtable is not None:
+            if text.lower() == "/close":
+                _roundtable = None
+                _rt_room_buf = None
+                tab_mgr.goto_tab(0)
+                app.invalidate()
+                return
+            target = None
+            msg = text
+            if text.startswith("@"):
+                parts = text.split(None, 1)
+                cand = parts[0][1:]
+                if cand in _roundtable.agent_names:
+                    target = cand
+                    msg = (
+                        parts[1]
+                        if len(parts) > 1
+                        else ""
+                    )
+            if msg:
+                append_text(
+                    build_user_frame(
+                        text, _exec_mode
+                    )
+                )
+                app.invalidate()
+                asyncio.ensure_future(
+                    handle_roundtable_response(
+                        app, msg, target
+                    )
+                )
+            return
+
+        # ── Debate routing ────────────────
+        global _debate, _debate_room_buf
+        if _debate is not None:
+            if text.lower() == "/close":
+                _debate = None
+                _debate_room_buf = None
+                tab_mgr.goto_tab(0)
+                app.invalidate()
+                return
+            if text:
+                _debate.inject(text)
+                _append_debate_room(
+                    f"[You]: {text}\n"
+                )
+                app.invalidate()
+            return
+
         # ── Agent session routing ──────────
         global _session_stack, _active_registry
         global _ai_task
@@ -9656,6 +10209,7 @@ def setup_input_handler(app):
             "/close", "/aboutme",
             "/new", "/save", "/load",
             "/add-dir", "/doctor", "/mcp",
+            "/team",
         ]
         if (
             text.startswith("/")
@@ -9670,6 +10224,216 @@ def setup_input_handler(app):
             ]
             if len(matches) == 1:
                 text = matches[0]
+
+        # ── /team ─────────────────────────
+        if text.lower() == "/team":
+            append_text(
+                build_user_frame(text, _exec_mode)
+            )
+            app.invalidate()
+            _TEAM_OPTIONS = [
+                "A. Roundtable",
+                "B. Facilitator (soon)",
+                "C. Structured Debate",
+                "D. Collaborative Chain (soon)",
+            ]
+
+            def _on_team_select(idx):
+                if idx == 0:
+                    # ── Roundtable ─────────────────
+                    if (
+                        _da_settings is None
+                        or _da_pool is None
+                    ):
+                        append_text(
+                            build_error_frame(
+                                "Session not ready."
+                            )
+                        )
+                        app.invalidate()
+                        return
+                    from starry_lib.agents\
+                        .agent_store import list_agents
+                    agent_cfgs = list_agents()
+                    if not agent_cfgs:
+                        append_text(
+                            build_warn_frame(
+                                "No agents stored."
+                                " Use /agent → Create"
+                                " first."
+                            )
+                        )
+                        app.invalidate()
+                        return
+                    agent_names = [
+                        cfg.name for cfg in agent_cfgs
+                    ]
+
+                    def _on_agents_confirm(indices):
+                        if len(indices) < 2:
+                            append_text(
+                                build_warn_frame(
+                                    "Select at least"
+                                    " 2 agents."
+                                )
+                            )
+                            app.invalidate()
+                            return
+                        names = [
+                            agent_names[i]
+                            for i in indices
+                        ]
+                        asyncio.ensure_future(
+                            _do_start_roundtable(
+                                app, names
+                            )
+                        )
+
+                    _dlg.show_toggle_dialog(
+                        app,
+                        title=(
+                            "Roundtable"
+                            " — Select Agents"
+                        ),
+                        items=agent_names,
+                        on_confirm=_on_agents_confirm,
+                        refocus=input_area,
+                        max_visible=8,
+                    )
+                elif idx == 2:
+                    # ── Structured Debate ──────────
+                    if (
+                        _da_settings is None
+                        or _da_pool is None
+                    ):
+                        append_text(
+                            build_error_frame(
+                                "Session not ready."
+                            )
+                        )
+                        app.invalidate()
+                        return
+                    from starry_lib.agents\
+                        .agent_store import list_agents
+                    agent_cfgs = list_agents()
+                    if len(agent_cfgs) < 2:
+                        append_text(
+                            build_warn_frame(
+                                "Need at least 2 agents."
+                                " Use /agent → Create"
+                                " first."
+                            )
+                        )
+                        app.invalidate()
+                        return
+                    agent_names = [
+                        cfg.name for cfg in agent_cfgs
+                    ]
+
+                    def _on_debate_agents(indices):
+                        if len(indices) < 2:
+                            append_text(
+                                build_warn_frame(
+                                    "Select at least"
+                                    " 2 agents."
+                                )
+                            )
+                            app.invalidate()
+                            return
+                        chosen = [
+                            agent_names[i]
+                            for i in indices
+                        ]
+
+                        def _on_topic(topic_text):
+                            if not topic_text.strip():
+                                append_text(
+                                    build_warn_frame(
+                                        "Topic cannot"
+                                        " be empty."
+                                    )
+                                )
+                                app.invalidate()
+                                return
+
+                            def _on_rounds(
+                                rounds_text
+                            ):
+                                try:
+                                    rounds = int(
+                                        rounds_text
+                                        .strip()
+                                    )
+                                    if rounds < 1:
+                                        raise ValueError
+                                except ValueError:
+                                    rounds = 3
+                                asyncio.ensure_future(
+                                    _do_start_debate(
+                                        app,
+                                        chosen,
+                                        topic_text
+                                        .strip(),
+                                        rounds,
+                                    )
+                                )
+
+                            _dlg.show_input_dialog(
+                                app,
+                                title=(
+                                    "Structured Debate"
+                                    " — Rounds"
+                                ),
+                                label=(
+                                    "Number of rounds"
+                                    " (default 3):"
+                                ),
+                                on_confirm=_on_rounds,
+                                refocus=input_area,
+                                initial_text="3",
+                            )
+
+                        _dlg.show_input_dialog(
+                            app,
+                            title=(
+                                "Structured Debate"
+                                " — Topic"
+                            ),
+                            label=(
+                                "Enter the debate"
+                                " topic:"
+                            ),
+                            on_confirm=_on_topic,
+                            refocus=input_area,
+                        )
+
+                    _dlg.show_toggle_dialog(
+                        app,
+                        title=(
+                            "Structured Debate"
+                            " — Select Agents"
+                        ),
+                        items=agent_names,
+                        on_confirm=_on_debate_agents,
+                        refocus=input_area,
+                        max_visible=8,
+                    )
+                else:
+                    append_text(
+                        build_warn_frame(
+                            "Not yet implemented."
+                        )
+                    )
+                    app.invalidate()
+
+            _dlg.show_menu_dialog(
+                app,
+                title="Team Mode",
+                options=_TEAM_OPTIONS,
+                on_select=_on_team_select,
+                refocus=input_area,
+            )
+            return
 
         # ── /exit ─────────────────────────
         if text.lower() == "/exit":
@@ -10351,7 +11115,7 @@ def setup_input_handler(app):
                 build_user_frame(text, _exec_mode)
             )
             app.invalidate()
-            modes = ["plan", "execution"]
+            modes = ["plan", "execution", "deep"]
 
             def on_mode_select(idx):
                 global _exec_mode
@@ -11028,6 +11792,10 @@ async def main():
             _init_role = _prefs["role"]
         if _prefs.get("theme"):
             _apply_theme(_prefs["theme"])
+        if _prefs.get("exec_mode") in (
+            "plan", "execution", "deep"
+        ):
+            _exec_mode = _prefs["exec_mode"]
         if _prefs.get("context_format") in (
             "markdown", "json"
         ):

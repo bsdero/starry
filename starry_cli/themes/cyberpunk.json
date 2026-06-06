@@ -27,5 +27,6 @@
   "md_code":              "#00f5e8",
   "md_code_bg":           "#12122e",
   "text_mode_plan":       "#00d0ff",
-  "text_mode_execution":  "#ff00cc"
+  "text_mode_execution":  "#ff00cc",
+  "text_mode_deep":      "#ff2200"
 }

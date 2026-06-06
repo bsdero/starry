@@ -517,6 +517,21 @@ class Session:
                             + plan_text
                         )
                         break
+        elif self._mode == "deep":
+            from starry_lib.prompts.loader import (
+                load_deep_prompt,
+            )
+            deep_text = load_deep_prompt()
+            if deep_text:
+                for i in reversed(range(len(msgs))):
+                    if msgs[i]["role"] == "user":
+                        msgs[i] = dict(msgs[i])
+                        msgs[i]["content"] = (
+                            msgs[i]["content"]
+                            + "\n\n"
+                            + deep_text
+                        )
+                        break
         return msgs
 
     # ── Core I/O ──────────────────────────────────────────────

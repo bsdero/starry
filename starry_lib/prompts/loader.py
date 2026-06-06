@@ -40,3 +40,19 @@ def load_plan_prompt() -> str:
     if bundled.exists():
         return bundled.read_text(encoding="utf-8")
     return ""
+
+
+def load_deep_prompt() -> str:
+    """Return deep mode prompt text.
+
+    Checks ~/.local/starry/prompts/deep_mode.txt first;
+    falls back to the bundled starry_lib/prompts file.
+    Returns empty string if neither exists.
+    """
+    user_file = _USER_PROMPTS_DIR / "deep_mode.txt"
+    if user_file.exists():
+        return user_file.read_text(encoding="utf-8")
+    bundled = _PROMPTS_DIR / "deep_mode.txt"
+    if bundled.exists():
+        return bundled.read_text(encoding="utf-8")
+    return ""
