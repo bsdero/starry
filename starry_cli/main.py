@@ -1520,6 +1520,10 @@ class SelectionMenu:
 
 sel_menu = SelectionMenu()
 
+# Separate menu instance for the debate room
+# so it doesn't conflict with the main buffer menu.
+debate_menu = SelectionMenu()
+
 # Holds the sessions list while a sessions menu
 # is active, for use by 'r' key handler.
 _session_menu_saved: list = []
@@ -2312,6 +2316,50 @@ def build_warn_frame(message):
         )
     lines.append(
         f"{M_WFRAME} {BL}{HZ * inner}{BR}"
+    )
+    return "\n".join(lines)
+
+
+def build_synthesis_frame(text):
+    """
+    Debate synthesis result in a full-white frame.
+    Uses M_NFRAME/M_NCONTENT (WHITE) markers to
+    match the follow-up questions scroll menu.
+    """
+    w = frame_width()
+    inner = w - 2
+    ts = datetime.now().strftime("%H:%M:%S")
+
+    lines = []
+    title = f" ✦ Debate Synthesis [{ts}] "
+    rest = max(
+        0, inner - _visible_len(title) - 1
+    )
+    top = f"{HZ}{title}{HZ * rest}{TR}"
+    lines.append(f"{M_NFRAME} {TL}{top}")
+
+    content_w = inner - 4
+    prefix = "   "
+    indent = " " * len(prefix)
+    for para in text.strip("\n").split("\n"):
+        stripped = para.strip()
+        if not stripped:
+            p = " " * inner
+            lines.append(
+                f"{M_NCONTENT} {VT}{p}{VT}"
+            )
+            continue
+        wrapped = _wrap_text(stripped, content_w)
+        for i, wl in enumerate(wrapped):
+            pfx = prefix if i == 0 else indent
+            c = f"{pfx}{wl}"
+            p = _pad_line(c, inner)
+            lines.append(
+                f"{M_NCONTENT} {VT}{p}{VT}"
+            )
+
+    lines.append(
+        f"{M_NFRAME} {BL}{HZ * inner}{BR}"
     )
     return "\n".join(lines)
 
@@ -3328,10 +3376,13 @@ def _spawn_debate_bufs(app, agent_names):
         "Debate Room", room_buf, read_only=True
     )
     tab_mgr.tabs.append(room_tab)
-    tab_mgr.active = len(tab_mgr.tabs) - 1
+    # Record index now; _spawn_agent_bufs will
+    # overwrite tab_mgr.active for each agent.
+    room_tab_idx = len(tab_mgr.tabs) - 1
     for name in agent_names:
         if _agent_chat_buf(name) is None:
             _spawn_agent_bufs(app, name)
+    tab_mgr.active = room_tab_idx
     app.invalidate()
     return room_buf
 
@@ -3562,25 +3613,44 @@ async def handle_debate_response(app):
     """Drive the debate loop and render to room buffer.
 
     Iterates debate.run() and routes each event:
-    - token: accumulate per session_id (not rendered)
-    - done with data="__debate_complete__": debate over
-    - done with agent data: write [name]: text to room
+    - token: live-render partial frame per speaker
+    - done/__debate_complete__: debate over
+    - done with agent data: finalise frame
     - error: write error line to room buffer
     """
     global _debate, _debate_room_buf
     if _debate is None or _debate_room_buf is None:
         return
 
-    accumulated: dict[str, str] = {}
+    partial_text: dict[str, str] = {}
+    partial_lines: dict[str, int] = {}
 
     async for event in _debate.run():
         if event.type == "token":
-            accumulated[event.session_id] = (
-                accumulated.get(
-                    event.session_id, ""
-                )
+            sid = event.session_id
+            partial_text[sid] = (
+                partial_text.get(sid, "")
                 + str(event.data)
             )
+            name = _debate.get_name_for_sid(sid)
+            if name is None:
+                continue
+            frame = build_team_agent_frame(
+                name,
+                partial_text[sid],
+                _get_team_color(name),
+            )
+            lc = frame.count("\n") + 1
+            if sid in partial_lines:
+                _replace_buf_last(
+                    _debate_room_buf,
+                    partial_lines[sid],
+                    frame,
+                )
+            else:
+                _append_debate_room(frame)
+            partial_lines[sid] = lc
+            app.invalidate()
         elif event.type == "done":
             if event.data == "__debate_complete__":
                 _append_debate_room(
@@ -3590,22 +3660,15 @@ async def handle_debate_response(app):
                 app.invalidate()
                 _offer_debate_synthesis(app)
                 return
-            name = _debate.get_name_for_sid(
-                event.session_id
-            )
+            sid = event.session_id
+            name = _debate.get_name_for_sid(sid)
             if name is None:
                 continue
-            full = str(event.data) or (
-                accumulated.get(
-                    event.session_id, ""
-                )
-            )
-            _append_debate_room(
-                build_team_agent_frame(
-                    name, full,
-                    _get_team_color(name),
-                )
-            )
+            # Frame already live-rendered; clear
+            # partial state and yield for UI.
+            partial_text.pop(sid, None)
+            partial_lines.pop(sid, None)
+            await asyncio.sleep(0)
             app.invalidate()
         elif event.type == "error":
             name = _debate.get_name_for_sid(
@@ -3618,12 +3681,138 @@ async def handle_debate_response(app):
             app.invalidate()
 
 
+def _redraw_debate_menu(app):
+    """Redraw debate_menu in the debate room buf."""
+    if not debate_menu.active:
+        return
+    if _debate_room_buf is None:
+        return
+    menu_text = debate_menu.build_frame()
+    lc = menu_text.count("\n") + 1
+    _replace_buf_last(
+        _debate_room_buf,
+        debate_menu._prev_lines,
+        menu_text,
+    )
+    debate_menu._prev_lines = lc
+    app.invalidate()
+
+
+def _show_debate_follow_up(app, questions):
+    """Show follow-up scroll menu in debate room.
+
+    Options are the follow-up questions plus an
+    'End debate' item at the bottom. Selecting a
+    question triggers the context-reset continue
+    flow; 'End debate' dismisses the menu.
+    """
+    global _debate, _debate_room_buf
+    if _debate_room_buf is None:
+        return
+
+    options = list(questions) + ["── End debate"]
+
+    def on_select(idx):
+        prev = debate_menu._prev_lines
+        if prev > 0 and _debate_room_buf:
+            _replace_buf_last(
+                _debate_room_buf, prev, ""
+            )
+        if idx == len(options) - 1:
+            # End debate selected
+            _append_debate_room(
+                f"{M_DIM} Debate closed."
+            )
+            app.invalidate()
+            return
+        # Continue with chosen question
+        chosen_q = questions[idx]
+        asyncio.ensure_future(
+            _continue_debate(app, chosen_q)
+        )
+
+    def on_cancel():
+        if _debate_room_buf:
+            _append_debate_room(
+                f"{M_DIM} Follow-up dismissed."
+            )
+        app.invalidate()
+
+    debate_menu.show(
+        "Follow-up questions",
+        options,
+        on_select,
+        white=True,
+        on_cancel=on_cancel,
+    )
+    menu_text = debate_menu.build_frame()
+    debate_menu._prev_lines = (
+        menu_text.count("\n") + 1
+    )
+    _append_debate_room(menu_text)
+    app.invalidate()
+
+
+async def _continue_debate(app, new_topic):
+    """Reset agent histories and restart debate.
+
+    1. Ask each agent for a 2-3 sentence position
+       summary (concurrent).
+    2. Clear each agent's conversation history.
+    3. Inject each agent's own summary back in.
+    4. Create a fresh Debate with the new topic.
+    5. Fire handle_debate_response().
+
+    No files in ~/.local/starry/ are touched.
+    """
+    global _debate, _debate_room_buf
+    if _debate is None or _da_pool is None:
+        return
+
+    _append_debate_room(
+        f"{M_DIM}"
+        " Gathering position summaries…"
+    )
+    app.invalidate()
+
+    summaries = await _debate.summarize_positions()
+
+    # Clear and reseed each participant
+    for name, sid in _debate.agents:
+        session = _da_pool.get(sid)
+        session.clear_history()
+        summ = summaries.get(name, "")
+        if summ:
+            session.inject_system_message(
+                f"[Your prior position]: {summ}"
+            )
+
+    # Replace debate with fresh instance
+    _debate = await _da_pool.debate(
+        _debate.agents,
+        new_topic,
+        _debate.rounds,
+    )
+
+    sep = "─" * (frame_width() - 4)
+    _append_debate_room(
+        f"{M_NFRAME} ╌{sep}╌\n"
+        f"{M_DIM} ↻ Continuing:"
+        f" {new_topic}"
+    )
+    app.invalidate()
+    asyncio.ensure_future(
+        handle_debate_response(app)
+    )
+
+
 def _offer_debate_synthesis(app):
     """Ask if user wants a synthesis summary.
 
-    Shows a Yes/No button dialog. If Yes, spawns
-    a throwaway agent to summarize the debate
-    transcript.
+    Shows a Yes/No button dialog. If Yes, runs
+    a throwaway subtask to summarize the debate.
+    The synthesis is shown in a white frame and
+    follow-up questions appear in a scroll menu.
     """
     global _debate
     if _debate is None:
@@ -3643,16 +3832,28 @@ def _offer_debate_synthesis(app):
             prompt = (
                 "Summarize the following debate"
                 " and identify the strongest"
-                " arguments on each side:\n\n"
+                " arguments on each side.\n"
+                "After the summary, on its own"
+                " line append exactly:\n"
+                '{"follow_ups": ["<q1>",'
+                ' "<q2>", "<q3>"]}\n'
+                "where q1-q3 are insightful"
+                " follow-up questions that"
+                " could deepen the debate.\n\n"
                 f"{transcript_text}"
             )
             summary = await _da_pool.run_subtask(
                 prompt, mode="plan"
             )
+            clean, fups = _extract_follow_ups(
+                summary
+            )
             _append_debate_room(
-                f"\n[Synthesis]:\n{summary}\n"
+                build_synthesis_frame(clean)
             )
             app.invalidate()
+            if fups:
+                _show_debate_follow_up(app, fups)
 
         asyncio.ensure_future(_do_synthesis())
 
@@ -8001,6 +8202,7 @@ def handle_remove_marked(event):
             _ai_task is not None
             and not _ai_task.done()
             and not sel_menu.active
+            and not debate_menu.active
         )
     ),
 )
@@ -8019,6 +8221,7 @@ def handle_escape_interrupt(event):
         lambda: (
             bool(_dialog_floats)
             and not sel_menu.active
+            and not debate_menu.active
         )
     ),
 )
@@ -8026,6 +8229,61 @@ def handle_escape_dialog(event):
     """Cancel an open wizard dialog."""
     if _wizard_cancel_fn is not None:
         _wizard_cancel_fn()
+    event.app.invalidate()
+
+
+# ---------------------------------------------------
+# Debate-room follow-up menu key bindings
+# ---------------------------------------------------
+
+@kb.add(
+    "up",
+    filter=Condition(
+        lambda: debate_menu.active
+    ),
+)
+def handle_debate_menu_up(event):
+    """Debate follow-up menu: navigate up."""
+    debate_menu.move_up()
+    _redraw_debate_menu(event.app)
+
+
+@kb.add(
+    "down",
+    filter=Condition(
+        lambda: debate_menu.active
+    ),
+)
+def handle_debate_menu_down(event):
+    """Debate follow-up menu: navigate down."""
+    debate_menu.move_down()
+    _redraw_debate_menu(event.app)
+
+
+@kb.add(
+    "enter",
+    filter=Condition(
+        lambda: debate_menu.active
+    ),
+)
+def handle_debate_menu_enter(event):
+    """Debate follow-up menu: confirm selection."""
+    debate_menu.confirm()
+    event.app.invalidate()
+
+
+@kb.add(
+    "escape",
+    filter=Condition(
+        lambda: debate_menu.active
+    ),
+)
+def handle_debate_menu_escape(event):
+    """Debate follow-up menu: cancel."""
+    on_cancel = debate_menu._on_cancel
+    debate_menu.dismiss()
+    if on_cancel is not None:
+        on_cancel()
     event.app.invalidate()
 
 
@@ -10064,7 +10322,7 @@ async def _do_start_debate(
         f"Participants: {joined}",
         f"Rounds: {rounds}",
         "Type a message to inject.",
-        "Type /close to exit.",
+        "Type /close or /exit to leave.",
     ]:
         _append_debate_room(f"{M_DIM} {_ln}")
     app.invalidate()
@@ -10315,13 +10573,19 @@ def setup_input_handler(app):
         # ── Debate routing ────────────────
         global _debate, _debate_room_buf
         if _debate is not None:
-            if text.lower() == "/close":
+            tl = text.lower()
+            if tl in ("/close", "/exit"):
                 _debate = None
                 _debate_room_buf = None
                 _team_agent_colors.clear()
                 _team_color_next = 0
                 tab_mgr.goto_tab(0)
                 app.invalidate()
+                if tl == "/exit":
+                    async def _dexit():
+                        await asyncio.sleep(0.3)
+                        app.exit()
+                    asyncio.ensure_future(_dexit())
                 return
             if text:
                 _debate.inject(text)

@@ -85,6 +85,21 @@ class Debate:
         """Ordered list of session_ids."""
         return [sid for _, sid in self._agents]
 
+    @property
+    def agents(self) -> list[tuple[str, str]]:
+        """Ordered (name, session_id) pairs."""
+        return list(self._agents)
+
+    @property
+    def topic(self) -> str:
+        """Current debate topic."""
+        return self._topic
+
+    @property
+    def rounds(self) -> int:
+        """Number of full cycles."""
+        return self._rounds
+
     # ── Transcript helpers ────────────────────────
 
     def record_turn(
@@ -136,6 +151,42 @@ class Debate:
                 return name
         return None
 
+    # ── Position summary helper ───────────────────
+
+    async def summarize_positions(
+        self,
+    ) -> dict[str, str]:
+        """Ask each agent to summarize their stance.
+
+        Sends a single chat_complete() call to each
+        agent concurrently. Returns a dict mapping
+        agent name → summary text (2-3 sentences).
+        Does not record turns in the transcript.
+        """
+        prompt = (
+            "In 2-3 sentences, summarize your"
+            " core stance and strongest argument"
+            " from this debate. Be concise."
+        )
+
+        async def _one(name, sid):
+            session = self._pool.get(sid)
+            try:
+                text = await session.chat_complete(
+                    prompt
+                )
+            except Exception:
+                text = ""
+            return name, text
+
+        results = await asyncio.gather(
+            *[
+                _one(name, sid)
+                for name, sid in self._agents
+            ]
+        )
+        return dict(results)
+
     # ── Main debate loop ──────────────────────────
 
     async def run(
@@ -162,7 +213,9 @@ class Debate:
             f" debate on: {self._topic}. "
             f"Other participants: {names_str}. "
             f"Argue your perspective clearly and"
-            f" respond to what others say."
+            f" respond to what others say. "
+            f"IMPORTANT: keep every reply to"
+            f" 3-5 sentences maximum."
         )
         for name, sid in self._agents:
             session = self._pool.get(sid)
@@ -186,13 +239,15 @@ class Debate:
                 base = (
                     f"Open the debate on:"
                     f" {self._topic}"
+                    f" (3-5 sentences only)."
                 )
             else:
                 ctx = self.format_context()
                 base = (
                     f"[Conversation so far]\n"
                     f"{ctx}\n\n"
-                    f"Now give your response."
+                    f"Give your response in"
+                    f" 3-5 sentences only."
                 )
 
             if injection is not None:
