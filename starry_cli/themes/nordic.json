@@ -28,5 +28,9 @@
   "md_code_bg":           "#1f2430",
   "text_mode_plan":       "#81a1c1",
   "text_mode_execution":  "#d08770",
-  "text_mode_deep":      "#bf616a"
+  "text_mode_deep":      "#bf616a",
+  "agent_palette": [
+    "#a3be8c","#b48ead","#88c0d0","#ebcb8b",
+    "#bf616a","#d08770","#eceff4","#81a1c1"
+  ]
 }

@@ -102,6 +102,7 @@ if command -v rsync &>/dev/null; then
     --exclude='config.toml' \
     --exclude='plan.md' \
     --exclude='install.sh' \
+    --exclude='conf/' \
     "$SRC/" "$INSTALL_DIR/"
   ok "Files synced (rsync)"
 else
@@ -141,7 +142,7 @@ ok "pip up to date"
 hdr "Installing StarryCLI"
 
 # Editable install so _find_project_root() resolves correctly
-"$PIP" install -e "$INSTALL_DIR" -q
+"$PIP" install -e "$INSTALL_DIR[cli]" -q
 ok "starry-lib installed (editable)"
 
 # ── 5. .env file ──────────────────────────────────────────────────────

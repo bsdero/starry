@@ -7,6 +7,9 @@
 # SUMMARY: Loads prompt files from starry_lib/prompts/
 #          with user-override support from
 #          ~/.local/starry/prompts/.
+#          Role prompts live in roles/<name>.txt;
+#          user overrides in
+#          ~/.local/starry/prompts/roles/<name>.txt.
 # NOTES: User file wins over bundled file. Returns
 #        empty string if neither exists so callers
 #        can safely skip injection.
@@ -53,6 +56,26 @@ def load_deep_prompt() -> str:
     if user_file.exists():
         return user_file.read_text(encoding="utf-8")
     bundled = _PROMPTS_DIR / "deep_mode.txt"
+    if bundled.exists():
+        return bundled.read_text(encoding="utf-8")
+    return ""
+
+
+def load_role_prompt(role_name: str) -> str:
+    """Return system prompt text for a named role.
+
+    Checks ~/.local/starry/prompts/roles/<name>.txt
+    first; falls back to the bundled
+    starry_lib/prompts/roles/<name>.txt.
+    Returns empty string if neither exists.
+    """
+    filename = f"{role_name}.txt"
+    user_file = (
+        _USER_PROMPTS_DIR / "roles" / filename
+    )
+    if user_file.exists():
+        return user_file.read_text(encoding="utf-8")
+    bundled = _PROMPTS_DIR / "roles" / filename
     if bundled.exists():
         return bundled.read_text(encoding="utf-8")
     return ""

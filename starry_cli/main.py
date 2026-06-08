@@ -126,6 +126,14 @@ MODE_CLR_PLAN = _theme["text_mode_plan"]
 MODE_CLR_DEEP = _theme.get(
     "text_mode_deep", "#cc2200"
 )
+AGENT_PALETTE: list[str] = _theme.get(
+    "agent_palette",
+    [
+        "#9ece6a", "#bb9af7", "#7dcfff",
+        "#ff9e64", "#f7768e", "#e0af68",
+        "#e0e0e0", "#c0caf5",
+    ],
+)
 
 VERSION = "v0.2.0-alpha"
 
@@ -330,6 +338,55 @@ def build_style(mode: str = "execution") -> Style:
             # Warning frame (cyan/blue)
             "line.wframe": f"{LIGHT_TEXT}",
             "line.wcontent": f"{LIGHT_TEXT}",
+            # Team agent frames (0-7, palette color)
+            "line.tframe0": (
+                f"{AGENT_PALETTE[0]}"
+            ),
+            "line.tcontent0": (
+                f"{AGENT_PALETTE[0]}"
+            ),
+            "line.tframe1": (
+                f"{AGENT_PALETTE[1]}"
+            ),
+            "line.tcontent1": (
+                f"{AGENT_PALETTE[1]}"
+            ),
+            "line.tframe2": (
+                f"{AGENT_PALETTE[2]}"
+            ),
+            "line.tcontent2": (
+                f"{AGENT_PALETTE[2]}"
+            ),
+            "line.tframe3": (
+                f"{AGENT_PALETTE[3]}"
+            ),
+            "line.tcontent3": (
+                f"{AGENT_PALETTE[3]}"
+            ),
+            "line.tframe4": (
+                f"{AGENT_PALETTE[4]}"
+            ),
+            "line.tcontent4": (
+                f"{AGENT_PALETTE[4]}"
+            ),
+            "line.tframe5": (
+                f"{AGENT_PALETTE[5]}"
+            ),
+            "line.tcontent5": (
+                f"{AGENT_PALETTE[5]}"
+            ),
+            "line.tframe6": (
+                f"{AGENT_PALETTE[6]}"
+            ),
+            "line.tcontent6": (
+                f"{AGENT_PALETTE[6]}"
+            ),
+            "line.tframe7": (
+                f"{AGENT_PALETTE[7]}"
+            ),
+            "line.tcontent7": (
+                f"{AGENT_PALETTE[7]}"
+            ),
             # Inline span styles
             "span.bold": (
                 f"bold {ACCENT_2}"
@@ -489,6 +546,16 @@ MARKER_STYLE = {
     M_UEXEC: "class:line.uframe_exec",
     M_UDEEP: "class:line.uframe_deep",
 }
+# Team agent frame markers "0f"-"7f" and
+# content markers "0c"-"7c"
+for _ti in range(8):
+    MARKER_STYLE[f"{_ti}f"] = (
+        f"class:line.tframe{_ti}"
+    )
+    MARKER_STYLE[f"{_ti}c"] = (
+        f"class:line.tcontent{_ti}"
+    )
+del _ti
 
 
 # ---------------------------------------------------
@@ -507,6 +574,12 @@ _USER_CONTENT_MARKERS = {
 _NOTIF_CONTENT_MARKERS = {M_NCONTENT}
 _ERROR_CONTENT_MARKERS = {M_ECONTENT}
 _WARN_CONTENT_MARKERS = {M_WCONTENT}
+# Maps team content marker → matching frame
+# style class; used by FrameLexer to color │
+_TEAM_CONTENT_MARKERS: dict[str, str] = {
+    f"{_i}c": f"class:line.tframe{_i}"
+    for _i in range(8)
+}
 
 _FRAME_STYLE_AI = "class:line.aframe"
 _FRAME_STYLE_USER = "class:line.uframe"
@@ -594,6 +667,12 @@ class FrameLexer(Lexer):
                 return _split_borders(
                     line, marker,
                     _FRAME_STYLE_WARN,
+                )
+
+            if marker in _TEAM_CONTENT_MARKERS:
+                return _split_borders(
+                    line, marker,
+                    _TEAM_CONTENT_MARKERS[marker],
                 )
 
             style = MARKER_STYLE.get(
@@ -1007,6 +1086,9 @@ _roundtable = None             # Roundtable | None
 _rt_room_buf = None            # room Buffer | None
 _debate = None                 # Debate | None
 _debate_room_buf = None        # debate room Buffer | None
+# Team chat: agent-name → palette index (0-7)
+_team_agent_colors: dict[str, int] = {}
+_team_color_next: int = 0
 
 
 # ── Session-state accessors ────────────────────────
@@ -2029,6 +2111,76 @@ def build_inline_notif(message, label="🔔"):
     # Bottom
     lines.append(
         f"{M_NFRAME} {BL}{HZ * inner}{BR}"
+    )
+    return "\n".join(lines)
+
+
+def _get_team_color(name: str) -> int:
+    """Return palette index for a team agent.
+
+    Assigns the next available index on first
+    call for each name; reuses on subsequent
+    calls. Wraps at 8 palette slots.
+    """
+    global _team_color_next
+    if name not in _team_agent_colors:
+        _team_agent_colors[name] = (
+            _team_color_next % 8
+        )
+        _team_color_next += 1
+    return _team_agent_colors[name]
+
+
+def build_team_agent_frame(
+    name, text, color_idx=0
+):
+    """
+    Team chat agent response frame.
+    Frame border and text use the same palette
+    color (color_idx 0-7). No markdown — plain
+    word-wrapped paragraphs only.
+    """
+    n = color_idx % 8
+    fm = f"{n}f"
+    cm = f"{n}c"
+    w = frame_width()
+    inner = w - 2
+    ts = datetime.now().strftime("%H:%M:%S")
+
+    lines = []
+    label = f" ✦ {name} [{ts}] "
+    rest = max(
+        0, inner - _visible_len(label) - 1
+    )
+    top = f"{HZ}{label}{HZ * rest}{TR}"
+    lines.append(f"{fm} {TL}{top}")
+
+    prefix = "   "
+    prefix_w = len(prefix)
+    content_w = inner - prefix_w - 1
+    indent = " " * prefix_w
+
+    for para in text.strip("\n").split("\n"):
+        stripped = para.strip()
+        if not stripped:
+            p = " " * inner
+            lines.append(
+                f"{cm} {VT}{p}{VT}"
+            )
+            continue
+        wrapped = _wrap_text(
+            stripped, content_w
+        )
+        for i, wl in enumerate(wrapped):
+            pfx = prefix if i == 0 else indent
+            c = f"{pfx}{wl}"
+            p = _pad_line(c, inner)
+            lines.append(
+                f"{cm} {VT}{p}{VT}"
+            )
+
+    lines.append(
+        f"{fm} {BL}{HZ * inner}{BR}"
     )
     return "\n".join(lines)
 
@@ -3360,7 +3512,9 @@ async def handle_roundtable_response(
     if _roundtable is None or _rt_room_buf is None:
         return
 
-    _append_room(f"\n[You]: {user_text}\n")
+    _append_room(
+        f"{M_DIM} ❯ {user_text}"
+    )
     app.invalidate()
 
     accumulated: dict[str, str] = {}
@@ -3384,7 +3538,10 @@ async def handle_roundtable_response(
             )
             accumulated[name] = full
             _append_room(
-                f"[{name}]: {full}\n"
+                build_team_agent_frame(
+                    name, full,
+                    _get_team_color(name),
+                )
             )
             _roundtable.record_response(
                 name, full
@@ -3392,7 +3549,8 @@ async def handle_roundtable_response(
             app.invalidate()
         elif event.type == "error":
             _append_room(
-                f"[{name} error]: {event.data}\n"
+                f"{M_EFRAME} [{name} error]:"
+                f" {event.data}"
             )
             app.invalidate()
 
@@ -3426,7 +3584,8 @@ async def handle_debate_response(app):
         elif event.type == "done":
             if event.data == "__debate_complete__":
                 _append_debate_room(
-                    "\n--- Debate complete ---\n"
+                    f"{M_NFRAME}"
+                    f" ─── debate complete ───"
                 )
                 app.invalidate()
                 _offer_debate_synthesis(app)
@@ -3442,7 +3601,10 @@ async def handle_debate_response(app):
                 )
             )
             _append_debate_room(
-                f"\n[{name}]: {full}\n"
+                build_team_agent_frame(
+                    name, full,
+                    _get_team_color(name),
+                )
             )
             app.invalidate()
         elif event.type == "error":
@@ -3450,7 +3612,8 @@ async def handle_debate_response(app):
                 event.session_id
             ) or "agent"
             _append_debate_room(
-                f"[{name} error]: {event.data}\n"
+                f"{M_EFRAME} [{name} error]:"
+                f" {event.data}"
             )
             app.invalidate()
 
@@ -8371,7 +8534,15 @@ _body_vsplit = VSplit([body_window, _body_sb_win])
 def _make_tab_vsplit(tab):
     """Build content + scrollbar VSplit for a Tab."""
     if tab.read_only:
-        _marked = tab.buffer is main_buffer
+        _marked = (
+            tab.buffer is main_buffer
+            or getattr(
+                tab.buffer, "name", ""
+            ) in (
+                "roundtable_room",
+                "debate_room",
+            )
+        )
         win = Window(
             content=BufferControl(
                 buffer=tab.buffer,
@@ -9828,12 +9999,13 @@ async def _do_start_roundtable(app, names):
         app, list(session_map.keys())
     )
     joined = ", ".join(names)
-    _append_room(
-        f"Roundtable started with: {joined}\n"
-        "Type a message to address all agents.\n"
-        "Type @name message to target one agent.\n"
-        "Type /close to exit.\n"
-    )
+    for _ln in [
+        f"Roundtable started with: {joined}",
+        "Type a message to address all agents.",
+        "Type @name to target one agent.",
+        "Type /close to exit.",
+    ]:
+        _append_room(f"{M_DIM} {_ln}")
     app.invalidate()
 
 
@@ -9887,14 +10059,14 @@ async def _do_start_debate(
         app, names
     )
     joined = ", ".join(names)
-    _append_debate_room(
-        f"Debate started — topic: {topic}\n"
-        f"Participants: {joined}\n"
-        f"Rounds: {rounds}\n"
-        "Type a message to inject into the debate.\n"
-        "Type /close to exit.\n"
-        "─" * 40 + "\n"
-    )
+    for _ln in [
+        f"Debate started — topic: {topic}",
+        f"Participants: {joined}",
+        f"Rounds: {rounds}",
+        "Type a message to inject.",
+        "Type /close to exit.",
+    ]:
+        _append_debate_room(f"{M_DIM} {_ln}")
     app.invalidate()
     asyncio.ensure_future(
         handle_debate_response(app)
@@ -10108,6 +10280,9 @@ def setup_input_handler(app):
             if text.lower() == "/close":
                 _roundtable = None
                 _rt_room_buf = None
+                _team_agent_colors.clear()
+                global _team_color_next
+                _team_color_next = 0
                 tab_mgr.goto_tab(0)
                 app.invalidate()
                 return
@@ -10143,13 +10318,15 @@ def setup_input_handler(app):
             if text.lower() == "/close":
                 _debate = None
                 _debate_room_buf = None
+                _team_agent_colors.clear()
+                _team_color_next = 0
                 tab_mgr.goto_tab(0)
                 app.invalidate()
                 return
             if text:
                 _debate.inject(text)
                 _append_debate_room(
-                    f"[You]: {text}\n"
+                    f"{M_DIM} ❯ {text}"
                 )
                 app.invalidate()
             return
@@ -11631,18 +11808,59 @@ async def telemetry_refresh(app):
 # Entry point
 # ---------------------------------------------------
 def _parse_args() -> argparse.Namespace:
-    """Parse CLI arguments for davy_cli."""
     parser = argparse.ArgumentParser(
-        prog="davy_cli.py",
-        description="StarryCLI TUI",
+        prog="starry_cli",
+        description=(
+            "StarryCLI — multi-agent TUI.\n\n"
+            "Without --prompt, launches the"
+            " interactive TUI.\n"
+            "With --prompt, sends a one-shot"
+            " query and exits."
+        ),
+        formatter_class=(
+            argparse.RawDescriptionHelpFormatter
+        ),
     )
     parser.add_argument(
         "--session",
         metavar="HASH",
         default=None,
         help=(
-            "Resume a saved session by hash "
-            "or hash prefix."
+            "Resume a saved session by hash"
+            " or hash prefix."
+        ),
+    )
+    parser.add_argument(
+        "--provider",
+        metavar="NAME",
+        default=None,
+        help=(
+            "LLM provider to use"
+            " (overrides config)."
+        ),
+    )
+    parser.add_argument(
+        "--model", "-m",
+        metavar="ID",
+        default=None,
+        help=(
+            "Model ID to use"
+            " (overrides provider default)."
+        ),
+    )
+    parser.add_argument(
+        "--role", "-r",
+        metavar="NAME",
+        default=None,
+        help="Agent role to start with.",
+    )
+    parser.add_argument(
+        "--prompt", "-p",
+        metavar="TEXT",
+        default=None,
+        help=(
+            "One-shot prompt: print response"
+            " to stdout and exit."
         ),
     )
     return parser.parse_args()
@@ -11713,6 +11931,69 @@ def _migrate_conf_dir() -> None:
     print(
         "Migrated config to ~/.local/starry/conf/"
     )
+
+
+async def _run_oneshot(
+    prompt: str,
+    settings,
+    provider: str,
+    model: str,
+    role: str,
+    mode: str,
+) -> None:
+    """Stream a one-shot prompt to stdout."""
+    if settings is None:
+        print(
+            "Error: no config loaded. "
+            "Run starry_cli and use /setup.",
+            file=sys.stderr,
+        )
+        return
+    async with da.AgentPool(settings) as pool:
+        try:
+            session = await pool.spawn(
+                role=role,
+                provider=provider,
+            )
+        except Exception as exc:
+            print(
+                f"Error starting session: {exc}",
+                file=sys.stderr,
+            )
+            return
+        if model:
+            try:
+                session.set_model(model)
+            except Exception:
+                pass
+        session.mode = mode
+        printed = False
+        try:
+            async for event in (
+                session.chat_auto(prompt)
+            ):
+                if event.type == "token":
+                    print(
+                        str(event.data),
+                        end="",
+                        flush=True,
+                    )
+                    printed = True
+                elif event.type == "error":
+                    print(
+                        f"\nError: {event.data}",
+                        file=sys.stderr,
+                    )
+                    break
+                elif event.type == "done":
+                    break
+        except Exception as exc:
+            print(
+                f"\nError: {exc}",
+                file=sys.stderr,
+            )
+        if printed:
+            print()  # trailing newline
 
 
 async def main():
@@ -11857,6 +12138,41 @@ async def main():
             _user_profile = (
                 _prefs["user_profile"]
             )
+
+    # CLI flags override saved prefs
+    if args.provider:
+        _init_provider = args.provider
+        if (
+            _da_settings is not None
+            and args.provider
+            in _da_settings.providers
+        ):
+            try:
+                pcfg = da.get_provider(
+                    _da_settings,
+                    args.provider,
+                )
+                _init_model = (
+                    pcfg.default_model
+                )
+            except Exception:
+                pass
+    if args.model:
+        _init_model = args.model
+    if args.role:
+        _init_role = args.role
+
+    # One-shot mode: skip the TUI entirely
+    if args.prompt is not None:
+        await _run_oneshot(
+            args.prompt,
+            _da_settings,
+            _init_provider,
+            _init_model,
+            _init_role,
+            _exec_mode,
+        )
+        return
 
     app = create_app()
     setup_input_handler(app)

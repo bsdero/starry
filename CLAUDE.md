@@ -18,10 +18,10 @@ they are read from environment variables (via `.env` or shell).
 ```bash
 # Editable install with dev extras (use the project venv)
 source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev,cli]"
 
 # Also install search extras to enable webfetch/websearch tools
-pip install -e ".[dev,search]"
+pip install -e ".[dev,cli,search]"
 
 # First-time setup: copy env example to user config dir and fill in API keys
 cp .env.example ~/.local/starry/conf/.env

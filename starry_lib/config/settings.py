@@ -26,6 +26,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
+from starry_lib.prompts.loader import load_role_prompt
+
 log = logging.getLogger(__name__)
 
 
@@ -273,6 +275,11 @@ def load_settings(
         entry["name"] = key
 
     settings = AppSettings(**raw)
+
+    # Fill system_prompt from roles/<name>.txt when absent
+    for name, role_cfg in settings.agents.items():
+        if not role_cfg.system_prompt:
+            role_cfg.system_prompt = load_role_prompt(name)
 
     if (
         settings.active_provider is not None
