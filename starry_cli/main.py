@@ -1086,6 +1086,15 @@ _roundtable = None             # Roundtable | None
 _rt_room_buf = None            # room Buffer | None
 _debate = None                 # Debate | None
 _debate_room_buf = None        # debate room Buffer | None
+_facilitator = None          # Facilitator | None
+_facilitator_room_buf = None # room Buffer | None
+_facilitator_transparent = True  # show tool traffic
+_chain = None                # Chain | None
+_chain_room_buf = None       # room Buffer | None
+_chain_checkpoint = False    # pause between stages
+_chain_stage_idx = 0         # active stage index
+_chain_running = False       # chain executing now
+_chain_auto_closed = False   # synthesis auto-fired
 # Team chat: agent-name → palette index (0-7)
 _team_agent_colors: dict[str, int] = {}
 _team_color_next: int = 0
@@ -1730,6 +1739,23 @@ def get_bot_bar():
         parts.append((
             "class:bot-bar.roundtable",
             f"ROUNDTABLE({_n})",
+        ))
+    elif _facilitator is not None:
+        parts.append((
+            "class:bot-bar.label", "room "
+        ))
+        parts.append((
+            "class:bot-bar.roundtable",
+            "FACILITATOR",
+        ))
+    elif _chain is not None:
+        parts.append((
+            "class:bot-bar.label", "room "
+        ))
+        parts.append((
+            "class:bot-bar.roundtable",
+            f"CHAIN({_chain_stage_idx + 1}"
+            f"/{_chain.stage_count})",
         ))
     elif _session_stack:
         parts.append((
@@ -2957,6 +2983,24 @@ def _append_debate_room(text):
         _buf_append(_debate_room_buf, text)
 
 
+def _append_facilitator_room(text):
+    """Append text to the facilitator room buffer.
+
+    Does nothing if the buffer does not exist.
+    """
+    if _facilitator_room_buf is not None:
+        _buf_append(_facilitator_room_buf, text)
+
+
+def _append_chain_room(text):
+    """Append text to the chain room buffer.
+
+    Does nothing if the buffer does not exist.
+    """
+    if _chain_room_buf is not None:
+        _buf_append(_chain_room_buf, text)
+
+
 def append_log(text):
     """Append plain text to Logs tab."""
     _buf_append(logs_buffer, text)
@@ -3348,10 +3392,13 @@ def _spawn_roundtable_bufs(app, agent_names):
         "Room", room_buf, read_only=True
     )
     tab_mgr.tabs.append(room_tab)
-    tab_mgr.active = len(tab_mgr.tabs) - 1
+    # Record index before agent tabs are appended.
+    room_tab_idx = len(tab_mgr.tabs) - 1
     for name in agent_names:
         if _agent_chat_buf(name) is None:
             _spawn_agent_bufs(app, name)
+    # Restore focus; _spawn_agent_bufs overwrites active.
+    tab_mgr.active = room_tab_idx
     app.invalidate()
     return room_buf
 
@@ -3382,6 +3429,68 @@ def _spawn_debate_bufs(app, agent_names):
     for name in agent_names:
         if _agent_chat_buf(name) is None:
             _spawn_agent_bufs(app, name)
+    tab_mgr.active = room_tab_idx
+    app.invalidate()
+    return room_buf
+
+
+def _spawn_facilitator_bufs(app, agent_names):
+    """Create Facilitator Room tab and agent bufs.
+
+    Creates a read-only room buffer registered as
+    'facilitator:room'. Adds a Facilitator Room tab.
+    For each agent name without a buffer, calls
+    _spawn_agent_bufs(). Restores focus to the
+    room tab (C1). Returns the room Buffer.
+    """
+    from prompt_toolkit.buffer import Buffer
+    room_buf = Buffer(
+        name="facilitator_room",
+        read_only=True,
+    )
+    buf_reg.register("facilitator:room", room_buf)
+    room_tab = Tab(
+        "Facilitator Room",
+        room_buf,
+        read_only=True,
+    )
+    tab_mgr.tabs.append(room_tab)
+    room_tab_idx = len(tab_mgr.tabs) - 1
+    for name in agent_names:
+        if _agent_chat_buf(name) is None:
+            _spawn_agent_bufs(app, name)
+    # Restore: _spawn_agent_bufs overwrites active.
+    tab_mgr.active = room_tab_idx
+    app.invalidate()
+    return room_buf
+
+
+def _spawn_chain_bufs(app, agent_names):
+    """Create Chain Room tab and agent bufs.
+
+    Creates a read-only room buffer registered as
+    'chain:room'. Adds a Chain Room tab. For each
+    agent name without a buffer, calls
+    _spawn_agent_bufs(). Restores focus to the
+    room tab (C1). Returns the room Buffer.
+    """
+    from prompt_toolkit.buffer import Buffer
+    room_buf = Buffer(
+        name="chain_room",
+        read_only=True,
+    )
+    buf_reg.register("chain:room", room_buf)
+    room_tab = Tab(
+        "Chain Room",
+        room_buf,
+        read_only=True,
+    )
+    tab_mgr.tabs.append(room_tab)
+    room_tab_idx = len(tab_mgr.tabs) - 1
+    for name in agent_names:
+        if _agent_chat_buf(name) is None:
+            _spawn_agent_bufs(app, name)
+    # Restore: _spawn_agent_bufs overwrites active.
     tab_mgr.active = room_tab_idx
     app.invalidate()
     return room_buf
@@ -3551,52 +3660,53 @@ async def handle_roundtable_response(
     """Stream responses from all roundtable agents.
 
     Calls _roundtable.post() and routes each event:
-    - "token" events are accumulated per agent.
-    - "done" events write the full response to the
-      room buffer and record it in the transcript.
-    - "error" events write an error line to the room.
+    - "token": live-render and replace partial frame
+      per agent via _replace_buf_last.
+    - "done": record transcript, clear partial state,
+      yield with await asyncio.sleep(0).
+    - "error": write error line to room buffer.
     Records the user message to the transcript AFTER
     all agents have responded, so format_context()
     inside post() sees only the prior history.
     """
     global _roundtable, _rt_room_buf
-    if _roundtable is None or _rt_room_buf is None:
+    rt = _roundtable
+    if rt is None or _rt_room_buf is None:
         return
 
     _append_room(
-        f"{M_DIM} ❯ {user_text}"
+        build_user_frame(user_text, _exec_mode)
     )
     app.invalidate()
 
-    accumulated: dict[str, str] = {}
+    partial_text: dict[str, str] = {}
 
-    async for event in _roundtable.post(
+    async for event in rt.post(
         user_text, target
     ):
-        name = _roundtable.get_name_for_sid(
+        name = rt.get_name_for_sid(
             event.session_id
         )
         if name is None:
             continue
         if event.type == "token":
-            accumulated[name] = (
-                accumulated.get(name, "")
+            partial_text[name] = (
+                partial_text.get(name, "")
                 + str(event.data)
             )
         elif event.type == "done":
             full = str(event.data) or (
-                accumulated.get(name, "")
+                partial_text.get(name, "")
             )
-            accumulated[name] = full
-            _append_room(
-                build_team_agent_frame(
-                    name, full,
-                    _get_team_color(name),
-                )
+            frame = build_team_agent_frame(
+                name,
+                full,
+                _get_team_color(name),
             )
-            _roundtable.record_response(
-                name, full
-            )
+            _append_room(frame)
+            rt.record_response(name, full)
+            partial_text.pop(name, None)
+            await asyncio.sleep(0)
             app.invalidate()
         elif event.type == "error":
             _append_room(
@@ -3605,7 +3715,10 @@ async def handle_roundtable_response(
             )
             app.invalidate()
 
-    _roundtable.record_user(user_text)
+    rt.record_user(user_text)
+    _append_room(
+        build_inline_notif("Your turn", "→")
+    )
     app.invalidate()
 
 
@@ -3619,20 +3732,21 @@ async def handle_debate_response(app):
     - error: write error line to room buffer
     """
     global _debate, _debate_room_buf
-    if _debate is None or _debate_room_buf is None:
+    de = _debate
+    if de is None or _debate_room_buf is None:
         return
 
     partial_text: dict[str, str] = {}
     partial_lines: dict[str, int] = {}
 
-    async for event in _debate.run():
+    async for event in de.run():
         if event.type == "token":
             sid = event.session_id
             partial_text[sid] = (
                 partial_text.get(sid, "")
                 + str(event.data)
             )
-            name = _debate.get_name_for_sid(sid)
+            name = de.get_name_for_sid(sid)
             if name is None:
                 continue
             frame = build_team_agent_frame(
@@ -3661,7 +3775,7 @@ async def handle_debate_response(app):
                 _offer_debate_synthesis(app)
                 return
             sid = event.session_id
-            name = _debate.get_name_for_sid(sid)
+            name = de.get_name_for_sid(sid)
             if name is None:
                 continue
             # Frame already live-rendered; clear
@@ -3671,7 +3785,7 @@ async def handle_debate_response(app):
             await asyncio.sleep(0)
             app.invalidate()
         elif event.type == "error":
-            name = _debate.get_name_for_sid(
+            name = de.get_name_for_sid(
                 event.session_id
             ) or "agent"
             _append_debate_room(
@@ -3681,16 +3795,338 @@ async def handle_debate_response(app):
             app.invalidate()
 
 
+async def handle_facilitator_response(
+    app, user_text
+):
+    """Stream the facilitator response to room buf.
+
+    Sends user_text to the facilitator via
+    _facilitator.post() and routes each event:
+    - token: accumulate (C2)
+    - done: flush build_team_agent_frame (C2),
+            record transcript
+    - tool_call: if transparent and call_agent,
+                 append dim delegation line
+    - tool_result: if transparent,
+                   append dim result line
+    - error: append error line
+    After all events: record user, append
+    'Your turn' notif (C9).
+    """
+    global _facilitator, _facilitator_room_buf
+    fac = _facilitator
+    if fac is None or _facilitator_room_buf is None:
+        return
+
+    _append_facilitator_room(
+        build_user_frame(user_text, _exec_mode)
+    )
+    app.invalidate()
+
+    partial_text: dict[str, str] = {}
+    fac_name = fac.facilitator_name
+    color = _get_team_color(fac_name)
+    last_agent_called = ""
+
+    async for event in fac.post(user_text):
+        if event.type == "token":
+            partial_text[fac_name] = (
+                partial_text.get(fac_name, "")
+                + str(event.data)
+            )
+        elif event.type == "done":
+            full = str(event.data) or (
+                partial_text.get(fac_name, "")
+            )
+            frame = build_team_agent_frame(
+                fac_name, full, color
+            )
+            _append_facilitator_room(frame)
+            fac.record_response(full)
+            partial_text.pop(fac_name, None)
+            await asyncio.sleep(0)
+            app.invalidate()
+        elif event.type == "tool_call":
+            if _facilitator_transparent:
+                d = event.data or {}
+                if d.get("name") == "call_agent":
+                    tgt = (
+                        d.get("args", {})
+                        .get("name", "?")
+                    )
+                    last_agent_called = tgt
+                    _append_facilitator_room(
+                        f"{M_DIM}"
+                        f" [→ {tgt}]"
+                        f" delegating…"
+                    )
+                    app.invalidate()
+        elif event.type == "tool_result":
+            if _facilitator_transparent:
+                d = event.data or {}
+                raw = str(
+                    d.get("result", "")
+                )
+                first = (
+                    raw.split("\n")[0][:80]
+                )
+                lbl = (
+                    last_agent_called
+                    or "agent"
+                )
+                _append_facilitator_room(
+                    f"{M_DIM}"
+                    f" [← {lbl}]: {first}"
+                )
+                app.invalidate()
+        elif event.type == "error":
+            _append_facilitator_room(
+                f"{M_EFRAME}"
+                f" [facilitator error]:"
+                f" {event.data}"
+            )
+            app.invalidate()
+
+    fac.record_user(user_text)
+    _append_facilitator_room(
+        build_inline_notif("Your turn", "→")
+    )
+    app.invalidate()
+
+
+async def handle_chain_stage(
+    app, stage_idx, input_text
+):
+    """Run one stage of the chain.
+
+    Streams session.chat(input_text) for the agent
+    at stage_idx. Records output. After done:
+    - if checkpoint: show checkpoint menu
+    - elif last stage: fire _offer_chain_synthesis
+    - else: auto-continue to next stage
+
+    Uses session.chat() (no tools) to keep stages
+    clean. (C2, C8)
+    """
+    global _chain, _chain_room_buf
+    global _chain_stage_idx, _chain_running
+    global _chain_auto_closed
+    ch = _chain
+    if ch is None or _chain_room_buf is None:
+        return
+
+    total = ch.stage_count
+    name = ch.get_name(stage_idx)
+    session = ch.get_session(stage_idx)
+    if name is None or session is None:
+        return
+
+    _chain_stage_idx = stage_idx
+    _chain_running = True
+    color = _get_team_color(name)
+
+    sep = "─" * (frame_width() - 4)
+    _append_chain_room(
+        f"{M_DIM}"
+        f" ╌{sep}╌\n"
+        f"{M_DIM}"
+        f" Stage {stage_idx + 1} of {total}:"
+        f" {name}"
+    )
+    _append_chain_room(
+        build_user_frame(input_text, _exec_mode)
+    )
+    app.invalidate()
+
+    partial_text: dict[str, str] = {}
+
+    async for event in session.chat(input_text):
+        if event.type == "token":
+            partial_text[name] = (
+                partial_text.get(name, "")
+                + str(event.data)
+            )
+        elif event.type == "done":
+            full = str(event.data) or (
+                partial_text.get(name, "")
+            )
+            frame = build_team_agent_frame(
+                name, full, color
+            )
+            _append_chain_room(frame)
+            ch.record_stage(name, full)
+            partial_text.pop(name, None)
+            _chain_running = False
+            await asyncio.sleep(0)
+            app.invalidate()
+
+            is_last = (
+                stage_idx == total - 1
+            )
+            if _chain_checkpoint:
+                _show_chain_checkpoint_menu(
+                    app,
+                    stage_idx,
+                    full,
+                )
+            elif is_last:
+                _chain_auto_closed = True
+                _offer_chain_synthesis(app)
+            else:
+                asyncio.ensure_future(
+                    handle_chain_stage(
+                        app,
+                        stage_idx + 1,
+                        full,
+                    )
+                )
+            return
+        elif event.type == "error":
+            _chain_running = False
+            _append_chain_room(
+                f"{M_EFRAME}"
+                f" [{name} error]:"
+                f" {event.data}"
+            )
+            app.invalidate()
+            return
+
+    _chain_running = False
+
+
+def _show_chain_checkpoint_menu(
+    app, stage_idx, stage_output
+):
+    """Checkpoint menu after a chain stage completes.
+
+    At intermediate stages (not the last):
+        Continue → stage N+1
+        Edit output
+        Stop chain
+    At the last stage:
+        Finish & synthesize
+        Edit output
+        Stop chain
+    Escape / cancel → Stop (run synthesis).
+    """
+    global _chain, _chain_room_buf
+    if _chain is None or _chain_room_buf is None:
+        return
+
+    total = _chain.stage_count
+    is_last = stage_idx == total - 1
+    next_n = stage_idx + 2  # 1-based next stage
+
+    if is_last:
+        options = [
+            "Finish & synthesize",
+            "Edit output",
+            "Stop chain",
+        ]
+    else:
+        options = [
+            f"Continue → stage {next_n}",
+            "Edit output",
+            "Stop chain",
+        ]
+
+    def on_select(idx):
+        global _chain_auto_closed
+        prev = debate_menu._prev_lines
+        if prev > 0 and _chain_room_buf:
+            _replace_buf_last(
+                _chain_room_buf, prev, ""
+            )
+        if idx == 0:
+            # Continue or Finish
+            if is_last:
+                _chain_auto_closed = True
+                _offer_chain_synthesis(app)
+            else:
+                asyncio.ensure_future(
+                    handle_chain_stage(
+                        app,
+                        stage_idx + 1,
+                        stage_output,
+                    )
+                )
+        elif idx == 1:
+            # Edit output
+            def on_edit(edited_text):
+                global _chain_auto_closed
+                use = (
+                    edited_text.strip()
+                    or stage_output
+                )
+                if is_last:
+                    _chain_auto_closed = True
+                    _offer_chain_synthesis(app)
+                else:
+                    asyncio.ensure_future(
+                        handle_chain_stage(
+                            app,
+                            stage_idx + 1,
+                            use,
+                        )
+                    )
+            _dlg.show_input_dialog(
+                app,
+                title=(
+                    f"Edit stage"
+                    f" {stage_idx + 1} output"
+                ),
+                label="Edit before passing on:",
+                on_confirm=on_edit,
+                refocus=input_area,
+                initial_text=stage_output[:500],
+            )
+        else:
+            # Stop chain → synthesis
+            _run_chain_synthesis(app)
+
+    def on_cancel():
+        prev = debate_menu._prev_lines
+        if prev > 0 and _chain_room_buf:
+            _replace_buf_last(
+                _chain_room_buf, prev, ""
+            )
+        _run_chain_synthesis(app)
+
+    debate_menu.show(
+        f"Stage {stage_idx + 1} complete",
+        options,
+        on_select,
+        white=True,
+        on_cancel=on_cancel,
+    )
+    menu_text = debate_menu.build_frame()
+    debate_menu._prev_lines = (
+        menu_text.count("\n") + 1
+    )
+    _append_chain_room(menu_text)
+    app.invalidate()
+
+
 def _redraw_debate_menu(app):
-    """Redraw debate_menu in the debate room buf."""
+    """Redraw debate_menu in the active room buf.
+
+    Works for both debate and roundtable, whichever
+    is currently active.
+    """
     if not debate_menu.active:
         return
-    if _debate_room_buf is None:
+    buf = (
+        _debate_room_buf
+        or _rt_room_buf
+        or _facilitator_room_buf
+        or _chain_room_buf
+    )
+    if buf is None:
         return
     menu_text = debate_menu.build_frame()
     lc = menu_text.count("\n") + 1
     _replace_buf_last(
-        _debate_room_buf,
+        buf,
         debate_menu._prev_lines,
         menu_text,
     )
@@ -3719,11 +4155,7 @@ def _show_debate_follow_up(app, questions):
                 _debate_room_buf, prev, ""
             )
         if idx == len(options) - 1:
-            # End debate selected
-            _append_debate_room(
-                f"{M_DIM} Debate closed."
-            )
-            app.invalidate()
+            _teardown_debate(app)
             return
         # Continue with chosen question
         chosen_q = questions[idx]
@@ -3740,6 +4172,69 @@ def _show_debate_follow_up(app, questions):
 
     debate_menu.show(
         "Follow-up questions",
+        options,
+        on_select,
+        white=True,
+        on_cancel=on_cancel,
+    )
+    menu_text = debate_menu.build_frame()
+    debate_menu._prev_lines = (
+        menu_text.count("\n") + 1
+    )
+    _append_debate_room(menu_text)
+    app.invalidate()
+
+
+def _show_debate_save_menu(app, fups, clean):
+    """Level 1 post-synthesis save menu (debate).
+
+    Options: Save & continue / Save & close.
+    Escape skips saving and goes to Level 2.
+    """
+    global _debate_room_buf
+    if _debate_room_buf is None:
+        return
+
+    options = ["Save & continue", "Save & close"]
+
+    def _do_save():
+        path = _save_synthesis_file(
+            "debate", clean
+        )
+        if path:
+            _append_debate_room(
+                f"{M_DIM} Saved to {path}"
+            )
+            app.invalidate()
+
+    def on_select(idx):
+        prev = debate_menu._prev_lines
+        if prev > 0 and _debate_room_buf:
+            _replace_buf_last(
+                _debate_room_buf, prev, ""
+            )
+        _do_save()
+        if idx == 1:
+            _teardown_debate(app)
+        else:
+            if fups:
+                _show_debate_follow_up(app, fups)
+            else:
+                _teardown_debate(app)
+
+    def on_cancel():
+        prev = debate_menu._prev_lines
+        if prev > 0 and _debate_room_buf:
+            _replace_buf_last(
+                _debate_room_buf, prev, ""
+            )
+        if fups:
+            _show_debate_follow_up(app, fups)
+        else:
+            _teardown_debate(app)
+
+    debate_menu.show(
+        "Save synthesis",
         options,
         on_select,
         white=True,
@@ -3807,66 +4302,775 @@ async def _continue_debate(app, new_topic):
 
 
 def _offer_debate_synthesis(app):
-    """Ask if user wants a synthesis summary.
+    """Auto-run synthesis summary after debate ends.
 
-    Shows a Yes/No button dialog. If Yes, runs
-    a throwaway subtask to summarize the debate.
+    Runs a throwaway subtask to summarize the debate.
     The synthesis is shown in a white frame and
     follow-up questions appear in a scroll menu.
     """
     global _debate
-    if _debate is None:
+    if _debate is None or _da_pool is None:
         return
 
     transcript_text = _debate.format_context(
         limit=200
     )
 
-    def _on_button(idx):
-        if idx != 0:  # 0 = Yes, 1 = No
-            return
-        if _da_pool is None:
-            return
+    async def _do_synthesis():
+        prompt = (
+            "Summarize the following debate"
+            " and identify the strongest"
+            " arguments on each side.\n"
+            "After the summary, on its own"
+            " line append exactly:\n"
+            '{"follow_ups": ["<q1>",'
+            ' "<q2>", "<q3>"]}\n'
+            "where q1-q3 are insightful"
+            " follow-up questions that"
+            " could deepen the debate.\n\n"
+            f"{transcript_text}"
+        )
+        summary = await _da_pool.run_subtask(
+            prompt, mode="plan"
+        )
+        clean, fups = _extract_follow_ups(summary)
+        _append_debate_room(
+            build_synthesis_frame(clean)
+        )
+        app.invalidate()
+        _show_debate_save_menu(app, fups, clean)
 
-        async def _do_synthesis():
-            prompt = (
-                "Summarize the following debate"
-                " and identify the strongest"
-                " arguments on each side.\n"
-                "After the summary, on its own"
-                " line append exactly:\n"
-                '{"follow_ups": ["<q1>",'
-                ' "<q2>", "<q3>"]}\n'
-                "where q1-q3 are insightful"
-                " follow-up questions that"
-                " could deepen the debate.\n\n"
-                f"{transcript_text}"
+    asyncio.ensure_future(_do_synthesis())
+
+
+def _save_synthesis_file(mode, text):
+    """Write synthesis to ~/.local/starry/summaries/.
+    Returns the Path on success, None on error.
+    """
+    ts = datetime.now().strftime("%m%d%Y-%H%M%S")
+    path = (
+        _STARRY_DIR / "summaries"
+        / f"{mode}_{ts}.md"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.write_text(
+            f"# {mode.title()} Synthesis\n\n"
+            f"Date: {datetime.now().isoformat()}"
+            f"\n\n---\n\n{text}\n"
+        )
+        return path
+    except Exception:
+        return None
+
+
+def _teardown_roundtable(app):
+    """Clear all roundtable state and go to tab 0."""
+    global _roundtable, _rt_room_buf
+    global _team_agent_colors, _team_color_next
+    _roundtable = None
+    _rt_room_buf = None
+    _team_agent_colors.clear()
+    _team_color_next = 0
+    tab_mgr.goto_tab(0)
+    app.invalidate()
+
+
+def _teardown_debate(app):
+    """Clear all debate state and go to tab 0."""
+    global _debate, _debate_room_buf
+    global _team_agent_colors, _team_color_next
+    _debate = None
+    _debate_room_buf = None
+    _team_agent_colors.clear()
+    _team_color_next = 0
+    tab_mgr.goto_tab(0)
+    app.invalidate()
+
+
+def _teardown_facilitator(app):
+    """Clear all facilitator state, go to tab 0."""
+    global _facilitator, _facilitator_room_buf
+    global _facilitator_transparent
+    global _team_agent_colors, _team_color_next
+    _facilitator = None
+    _facilitator_room_buf = None
+    _facilitator_transparent = True
+    _team_agent_colors.clear()
+    _team_color_next = 0
+    tab_mgr.goto_tab(0)
+    app.invalidate()
+
+
+def _teardown_chain(app):
+    """Clear all chain state, go to tab 0."""
+    global _chain, _chain_room_buf
+    global _chain_checkpoint, _chain_stage_idx
+    global _chain_running, _chain_auto_closed
+    global _team_agent_colors, _team_color_next
+    _chain = None
+    _chain_room_buf = None
+    _chain_checkpoint = False
+    _chain_stage_idx = 0
+    _chain_running = False
+    _chain_auto_closed = False
+    _team_agent_colors.clear()
+    _team_color_next = 0
+    tab_mgr.goto_tab(0)
+    app.invalidate()
+
+
+def _show_roundtable_follow_up(app, questions):
+    """Follow-up scroll menu in the Room buffer.
+
+    Options are the follow-up questions plus an
+    'End session' item. Selecting a question triggers
+    _continue_roundtable(); 'End session' tears down.
+    """
+    global _rt_room_buf
+    if _rt_room_buf is None:
+        return
+
+    options = list(questions) + ["── End session"]
+
+    def on_select(idx):
+        prev = debate_menu._prev_lines
+        if prev > 0 and _rt_room_buf:
+            _replace_buf_last(
+                _rt_room_buf, prev, ""
             )
-            summary = await _da_pool.run_subtask(
-                prompt, mode="plan"
+        if idx == len(options) - 1:
+            _teardown_roundtable(app)
+            return
+        chosen_q = questions[idx]
+        asyncio.ensure_future(
+            _continue_roundtable(app, chosen_q)
+        )
+
+    def on_cancel():
+        if _rt_room_buf:
+            _append_room(
+                f"{M_DIM} Follow-up dismissed."
             )
-            clean, fups = _extract_follow_ups(
-                summary
+        app.invalidate()
+
+    debate_menu.show(
+        "Follow-up questions",
+        options,
+        on_select,
+        white=True,
+        on_cancel=on_cancel,
+    )
+    menu_text = debate_menu.build_frame()
+    debate_menu._prev_lines = (
+        menu_text.count("\n") + 1
+    )
+    _append_room(menu_text)
+    app.invalidate()
+
+
+def _show_facilitator_follow_up(app, questions):
+    """Follow-up scroll menu in facilitator room.
+
+    Options are the follow-up questions plus
+    '── End session'. Selecting a question calls
+    _continue_facilitator(); End session tears down.
+    """
+    global _facilitator_room_buf
+    if _facilitator_room_buf is None:
+        return
+
+    options = (
+        list(questions) + ["── End session"]
+    )
+
+    def on_select(idx):
+        prev = debate_menu._prev_lines
+        if prev > 0 and _facilitator_room_buf:
+            _replace_buf_last(
+                _facilitator_room_buf, prev, ""
             )
-            _append_debate_room(
-                build_synthesis_frame(clean)
+        if idx == len(options) - 1:
+            _teardown_facilitator(app)
+            return
+        chosen_q = questions[idx]
+        asyncio.ensure_future(
+            _continue_facilitator(app, chosen_q)
+        )
+
+    def on_cancel():
+        if _facilitator_room_buf:
+            _append_facilitator_room(
+                f"{M_DIM} Follow-up dismissed."
+            )
+        app.invalidate()
+
+    debate_menu.show(
+        "Follow-up questions",
+        options,
+        on_select,
+        white=True,
+        on_cancel=on_cancel,
+    )
+    menu_text = debate_menu.build_frame()
+    debate_menu._prev_lines = (
+        menu_text.count("\n") + 1
+    )
+    _append_facilitator_room(menu_text)
+    app.invalidate()
+
+
+def _show_chain_follow_up(app, questions):
+    """Follow-up scroll menu in chain room.
+
+    Options are the follow-up questions plus
+    '── End session'. Selecting a question calls
+    _continue_chain(); End session tears down.
+    """
+    global _chain_room_buf
+    if _chain_room_buf is None:
+        return
+
+    options = (
+        list(questions) + ["── End session"]
+    )
+
+    def on_select(idx):
+        prev = debate_menu._prev_lines
+        if prev > 0 and _chain_room_buf:
+            _replace_buf_last(
+                _chain_room_buf, prev, ""
+            )
+        if idx == len(options) - 1:
+            _teardown_chain(app)
+            return
+        chosen_q = questions[idx]
+        asyncio.ensure_future(
+            _continue_chain(app, chosen_q)
+        )
+
+    def on_cancel():
+        if _chain_room_buf:
+            _append_chain_room(
+                f"{M_DIM} Follow-up dismissed."
+            )
+        app.invalidate()
+
+    debate_menu.show(
+        "Follow-up questions",
+        options,
+        on_select,
+        white=True,
+        on_cancel=on_cancel,
+    )
+    menu_text = debate_menu.build_frame()
+    debate_menu._prev_lines = (
+        menu_text.count("\n") + 1
+    )
+    _append_chain_room(menu_text)
+    app.invalidate()
+
+
+def _show_facilitator_save_menu(app, fups, clean):
+    """Level 1 post-synthesis save menu (facilitator).
+
+    Options: Save & continue / Save & close.
+    Escape skips saving and goes to Level 2.
+    """
+    global _facilitator_room_buf
+    if _facilitator_room_buf is None:
+        return
+
+    options = ["Save & continue", "Save & close"]
+
+    def _do_save():
+        path = _save_synthesis_file(
+            "facilitator", clean
+        )
+        if path:
+            _append_facilitator_room(
+                f"{M_DIM} Saved to {path}"
             )
             app.invalidate()
+
+    def on_select(idx):
+        prev = debate_menu._prev_lines
+        if prev > 0 and _facilitator_room_buf:
+            _replace_buf_last(
+                _facilitator_room_buf, prev, ""
+            )
+        _do_save()
+        if idx == 1:
+            _teardown_facilitator(app)
+        else:
             if fups:
-                _show_debate_follow_up(app, fups)
+                _show_facilitator_follow_up(
+                    app, fups
+                )
+            else:
+                _teardown_facilitator(app)
 
-        asyncio.ensure_future(_do_synthesis())
+    def on_cancel():
+        prev = debate_menu._prev_lines
+        if prev > 0 and _facilitator_room_buf:
+            _replace_buf_last(
+                _facilitator_room_buf, prev, ""
+            )
+        if fups:
+            _show_facilitator_follow_up(app, fups)
+        else:
+            _teardown_facilitator(app)
 
-    _dlg.show_button_dialog(
-        app,
-        title="Debate complete",
-        message=(
-            "Would you like a synthesis summary?"
-        ),
-        buttons=["Yes", "No"],
-        on_button=_on_button,
-        refocus=input_area,
+    debate_menu.show(
+        "Save synthesis",
+        options,
+        on_select,
+        white=True,
+        on_cancel=on_cancel,
     )
+    menu_text = debate_menu.build_frame()
+    debate_menu._prev_lines = (
+        menu_text.count("\n") + 1
+    )
+    _append_facilitator_room(menu_text)
+    app.invalidate()
+
+
+def _show_chain_save_menu(app, fups, clean):
+    """Level 1 post-synthesis save menu (chain).
+
+    Options: Save & continue / Save & close.
+    Escape skips saving and goes to Level 2.
+    """
+    global _chain_room_buf
+    if _chain_room_buf is None:
+        return
+
+    options = ["Save & continue", "Save & close"]
+
+    def _do_save():
+        path = _save_synthesis_file(
+            "chain", clean
+        )
+        if path:
+            _append_chain_room(
+                f"{M_DIM} Saved to {path}"
+            )
+            app.invalidate()
+
+    def on_select(idx):
+        prev = debate_menu._prev_lines
+        if prev > 0 and _chain_room_buf:
+            _replace_buf_last(
+                _chain_room_buf, prev, ""
+            )
+        _do_save()
+        if idx == 1:
+            _teardown_chain(app)
+        else:
+            if fups:
+                _show_chain_follow_up(app, fups)
+            else:
+                _teardown_chain(app)
+
+    def on_cancel():
+        prev = debate_menu._prev_lines
+        if prev > 0 and _chain_room_buf:
+            _replace_buf_last(
+                _chain_room_buf, prev, ""
+            )
+        if fups:
+            _show_chain_follow_up(app, fups)
+        else:
+            _teardown_chain(app)
+
+    debate_menu.show(
+        "Save synthesis",
+        options,
+        on_select,
+        white=True,
+        on_cancel=on_cancel,
+    )
+    menu_text = debate_menu.build_frame()
+    debate_menu._prev_lines = (
+        menu_text.count("\n") + 1
+    )
+    _append_chain_room(menu_text)
+    app.invalidate()
+
+
+def _show_roundtable_save_menu(app, fups, clean):
+    """Level 1 post-synthesis save menu (roundtable).
+
+    Options: Save & continue / Save & close.
+    Escape skips saving and goes to Level 2.
+    """
+    global _rt_room_buf
+    if _rt_room_buf is None:
+        return
+
+    options = ["Save & continue", "Save & close"]
+
+    def _do_save():
+        path = _save_synthesis_file(
+            "roundtable", clean
+        )
+        if path:
+            _append_room(
+                f"{M_DIM} Saved to {path}"
+            )
+            app.invalidate()
+
+    def on_select(idx):
+        prev = debate_menu._prev_lines
+        if prev > 0 and _rt_room_buf:
+            _replace_buf_last(
+                _rt_room_buf, prev, ""
+            )
+        _do_save()
+        if idx == 1:
+            _teardown_roundtable(app)
+        else:
+            if fups:
+                _show_roundtable_follow_up(
+                    app, fups
+                )
+            else:
+                _teardown_roundtable(app)
+
+    def on_cancel():
+        prev = debate_menu._prev_lines
+        if prev > 0 and _rt_room_buf:
+            _replace_buf_last(
+                _rt_room_buf, prev, ""
+            )
+        if fups:
+            _show_roundtable_follow_up(app, fups)
+        else:
+            _teardown_roundtable(app)
+
+    debate_menu.show(
+        "Save synthesis",
+        options,
+        on_select,
+        white=True,
+        on_cancel=on_cancel,
+    )
+    menu_text = debate_menu.build_frame()
+    debate_menu._prev_lines = (
+        menu_text.count("\n") + 1
+    )
+    _append_room(menu_text)
+    app.invalidate()
+
+
+async def _continue_roundtable(app, new_question):
+    """Reset agent histories and continue chat.
+
+    1. Ask each agent for a 2-3 sentence summary.
+    2. Clear each agent's conversation history.
+    3. Inject each agent's own summary back in.
+    4. Post the selected question to start the
+       new conversation turn.
+    """
+    global _roundtable, _rt_room_buf
+    if _roundtable is None or _da_pool is None:
+        return
+
+    _append_room(
+        f"{M_DIM} Gathering position summaries…"
+    )
+    app.invalidate()
+
+    summaries = (
+        await _roundtable.summarize_positions()
+    )
+
+    for name, sid in (
+        _roundtable.session_map.items()
+    ):
+        session = _da_pool.get(sid)
+        session.clear_history()
+        summ = summaries.get(name, "")
+        if summ:
+            session.inject_system_message(
+                f"[Your prior position]: {summ}"
+            )
+
+    sep = "─" * (frame_width() - 4)
+    _append_room(
+        f"{M_NFRAME} ╌{sep}╌\n"
+        f"{M_DIM} ↻ Continuing: {new_question}"
+    )
+    app.invalidate()
+    asyncio.ensure_future(
+        handle_roundtable_response(
+            app, new_question
+        )
+    )
+
+
+async def _continue_facilitator(app, new_question):
+    """Reset histories and continue facilitator session.
+
+    1. Ask facilitator for a 2-3 sentence summary.
+    2. Clear facilitator + all specialist sessions.
+    3. Re-inject the summary into the facilitator.
+    4. Re-seed facilitator with its role context.
+    5. Show a separator line.
+    6. Post the new question.
+    """
+    global _facilitator, _facilitator_room_buf
+    if _facilitator is None or _da_pool is None:
+        return
+
+    _append_facilitator_room(
+        f"{M_DIM} Gathering session summary…"
+    )
+    app.invalidate()
+
+    summaries = (
+        await _facilitator.summarize_positions()
+    )
+
+    # Clear facilitator session history.
+    fac_sid = (
+        f"agent-{_facilitator.facilitator_name}"
+    )
+    fac_session = _da_pool.get(fac_sid)
+    fac_session.clear_history()
+    summ = summaries.get(
+        _facilitator.facilitator_name, ""
+    )
+    if summ:
+        fac_session.inject_system_message(
+            f"[Prior session summary]: {summ}"
+        )
+
+    # Clear specialist sessions.
+    for spec_name in _facilitator.specialist_names:
+        spec_sid = f"agent-{spec_name}"
+        try:
+            spec_session = _da_pool.get(spec_sid)
+            spec_session.clear_history()
+        except KeyError:
+            pass
+
+    # Re-seed facilitator with coordination context.
+    spec_list = ", ".join(
+        _facilitator.specialist_names
+    )
+    fac_session.inject_system_message(
+        "You are a facilitator coordinating"
+        " a team of specialist agents."
+        f" Available specialists: {spec_list}."
+        " Use the call_agent tool to delegate"
+        " subtasks. Synthesize replies for"
+        " the user."
+    )
+
+    sep = "─" * (frame_width() - 4)
+    _append_facilitator_room(
+        f"{M_NFRAME} ╌{sep}╌\n"
+        f"{M_DIM} ↻ Continuing: {new_question}"
+    )
+    app.invalidate()
+    asyncio.ensure_future(
+        handle_facilitator_response(
+            app, new_question
+        )
+    )
+
+
+async def _continue_chain(app, new_task):
+    """Reset histories and re-run the chain.
+
+    1. Ask each agent for a 2-3 sentence summary.
+    2. Clear each agent's history, re-inject summary.
+    3. Create a fresh Chain with the same agents.
+    4. Reset chain globals.
+    5. Show a separator line.
+    6. Start the chain from stage 0 with new_task.
+    """
+    global _chain, _chain_room_buf
+    global _chain_stage_idx, _chain_running
+    global _chain_auto_closed
+    if _chain is None or _da_pool is None:
+        return
+
+    _append_chain_room(
+        f"{M_DIM} Gathering stage summaries…"
+    )
+    app.invalidate()
+
+    summaries = await _chain.summarize_positions()
+
+    for name, sid in _chain.agents:
+        session = _da_pool.get(sid)
+        session.clear_history()
+        summ = summaries.get(name, "")
+        if summ:
+            session.inject_system_message(
+                f"[Your prior contribution]:"
+                f" {summ}"
+            )
+
+    # Fresh chain with same agents, cleared state.
+    _chain = _da_pool.chain(_chain.agents)
+    _chain_stage_idx = 0
+    _chain_running = False
+    _chain_auto_closed = False
+
+    sep = "─" * (frame_width() - 4)
+    _append_chain_room(
+        f"{M_NFRAME} ╌{sep}╌\n"
+        f"{M_DIM} ↻ Continuing: {new_task}"
+    )
+    app.invalidate()
+    asyncio.ensure_future(
+        handle_chain_stage(app, 0, new_task)
+    )
+
+
+def _run_roundtable_synthesis(app):
+    """Auto-run synthesis when roundtable closes.
+
+    Runs a throwaway subtask to summarize the session.
+    The synthesis is shown in a white frame and
+    follow-up questions appear in a scroll menu.
+    Teardown is deferred to the 'End session' option.
+    """
+    global _roundtable
+    if _roundtable is None or _da_pool is None:
+        _teardown_roundtable(app)
+        return
+
+    transcript_text = _roundtable.format_context(
+        limit=200
+    )
+
+    async def _do_synthesis():
+        prompt = (
+            "Summarize the following conversation"
+            " and identify the main themes"
+            " discussed.\n"
+            "After the summary, on its own"
+            " line append exactly:\n"
+            '{"follow_ups": ["<q1>",'
+            ' "<q2>", "<q3>"]}\n'
+            "where q1-q3 are insightful"
+            " follow-up questions.\n\n"
+            f"{transcript_text}"
+        )
+        summary = await _da_pool.run_subtask(
+            prompt, mode="plan"
+        )
+        clean, fups = _extract_follow_ups(summary)
+        _append_room(build_synthesis_frame(clean))
+        app.invalidate()
+        _show_roundtable_save_menu(
+            app, fups, clean
+        )
+
+    asyncio.ensure_future(_do_synthesis())
+
+
+def _run_facilitator_synthesis(app):
+    """Run synthesis when facilitator session closes.
+
+    Runs a throwaway subtask to summarize the session.
+    Shows synthesis in a white frame and shows the
+    save menu. Teardown is deferred. (C4, C5)
+    """
+    global _facilitator
+    if _facilitator is None or _da_pool is None:
+        _teardown_facilitator(app)
+        return
+
+    transcript_text = _facilitator.format_context(
+        limit=200
+    )
+
+    async def _do_synthesis():
+        prompt = (
+            "Summarize the following facilitated"
+            " session and identify the main"
+            " outcomes and decisions.\n"
+            "After the summary, on its own"
+            " line append exactly:\n"
+            '{"follow_ups": ["<q1>",'
+            ' "<q2>", "<q3>"]}\n'
+            "where q1-q3 are insightful"
+            " follow-up questions.\n\n"
+            f"{transcript_text}"
+        )
+        summary = await _da_pool.run_subtask(
+            prompt, mode="plan"
+        )
+        clean, fups = _extract_follow_ups(summary)
+        _append_facilitator_room(
+            build_synthesis_frame(clean)
+        )
+        app.invalidate()
+        _show_facilitator_save_menu(
+            app, fups, clean
+        )
+
+    asyncio.ensure_future(_do_synthesis())
+
+
+def _offer_chain_synthesis(app):
+    """Auto-run synthesis when chain ends naturally.
+
+    Called automatically after the last stage
+    completes (no checkpoint) or after the last
+    stage's checkpoint menu chooses Finish.
+    Also called by _run_chain_synthesis (C4).
+    """
+    global _chain
+    if _chain is None or _da_pool is None:
+        _teardown_chain(app)
+        return
+
+    transcript_text = _chain.format_context(
+        limit=200
+    )
+
+    async def _do_synthesis():
+        prompt = (
+            "Summarize the following pipeline"
+            " output and identify the main"
+            " themes and results.\n"
+            "After the summary, on its own"
+            " line append exactly:\n"
+            '{"follow_ups": ["<q1>",'
+            ' "<q2>", "<q3>"]}\n'
+            "where q1-q3 are insightful"
+            " follow-up questions.\n\n"
+            f"{transcript_text}"
+        )
+        summary = await _da_pool.run_subtask(
+            prompt, mode="plan"
+        )
+        clean, fups = _extract_follow_ups(summary)
+        _append_chain_room(
+            build_synthesis_frame(clean)
+        )
+        app.invalidate()
+        _show_chain_save_menu(app, fups, clean)
+
+    asyncio.ensure_future(_do_synthesis())
+
+
+def _run_chain_synthesis(app):
+    """Run synthesis when /close is typed.
+
+    Delegates to _offer_chain_synthesis. Use this
+    function from the routing block so both the
+    /close path and the Stop checkpoint path share
+    the same logic.
+    """
+    _offer_chain_synthesis(app)
 
 
 # ===================================================
@@ -10253,6 +11457,11 @@ async def _do_start_roundtable(app, names):
         Roundtable,
     )
     _roundtable = Roundtable(_da_pool, session_map)
+    _roundtable.inject_seed(
+        "You are in a shared conversation room."
+        " Keep every reply to 3-5 sentences"
+        " maximum. Be direct and stay on topic."
+    )
     _rt_room_buf = _spawn_roundtable_bufs(
         app, list(session_map.keys())
     )
@@ -10261,7 +11470,8 @@ async def _do_start_roundtable(app, names):
         f"Roundtable started with: {joined}",
         "Type a message to address all agents.",
         "Type @name to target one agent.",
-        "Type /close to exit.",
+        "/close — finish & synthesize"
+        " | /exit — quit",
     ]:
         _append_room(f"{M_DIM} {_ln}")
     app.invalidate()
@@ -10322,12 +11532,165 @@ async def _do_start_debate(
         f"Participants: {joined}",
         f"Rounds: {rounds}",
         "Type a message to inject.",
-        "Type /close or /exit to leave.",
+        "/close — end debate | /exit — quit",
     ]:
         _append_debate_room(f"{M_DIM} {_ln}")
     app.invalidate()
     asyncio.ensure_future(
         handle_debate_response(app)
+    )
+
+
+async def _do_start_facilitator(
+    app, fac_name, specialist_names, transparent
+):
+    """Spawn agents and open the Facilitator Room tab.
+
+    Spawns the facilitator first (execution mode is
+    hardcoded in ActiveRegistry.spawn_agent), then
+    all specialists. Creates the Facilitator instance
+    via pool.facilitator(), opens the room buffer,
+    and prints welcome lines (C10).
+
+    Args:
+        app: The prompt_toolkit Application.
+        fac_name: Name of the facilitator agent.
+        specialist_names: list[str] specialist names.
+        transparent: bool — show tool call traffic.
+    """
+    global _facilitator, _facilitator_room_buf
+    global _facilitator_transparent
+    global _active_registry
+    if _active_registry is None:
+        from starry_lib.agents.active_registry\
+            import ActiveRegistry
+        _active_registry = ActiveRegistry()
+        _init_agent_tools()
+
+    all_names = [fac_name] + specialist_names
+    for name in all_names:
+        try:
+            if not _active_registry.is_active(name):
+                await _active_registry.spawn_agent(
+                    name,
+                    _da_pool,
+                    _da_settings,
+                )
+        except Exception as exc:
+            append_text(
+                build_error_frame(
+                    f"Cannot spawn '{name}': {exc}"
+                )
+            )
+            app.invalidate()
+            return
+
+    _facilitator = _da_pool.facilitator(
+        fac_name,
+        f"agent-{fac_name}",
+        specialist_names,
+    )
+    _facilitator_transparent = transparent
+
+    # Seed facilitator with its coordination role.
+    fac_session = _da_pool.get(
+        f"agent-{fac_name}"
+    )
+    spec_list = ", ".join(specialist_names)
+    fac_session.inject_system_message(
+        "You are a facilitator coordinating"
+        " a team of specialist agents."
+        f" Available specialists: {spec_list}."
+        " Use the call_agent tool to delegate"
+        " subtasks to them. Synthesize their"
+        " responses into a unified reply for"
+        " the user."
+    )
+
+    _facilitator_room_buf = _spawn_facilitator_bufs(
+        app, all_names
+    )
+    t_mode = "on" if transparent else "off"
+    joined_specs = ", ".join(specialist_names)
+    for _ln in [
+        f"Facilitator started —"
+        f" coordinator: {fac_name}",
+        f"Specialists: {joined_specs}",
+        f"Transparent mode: {t_mode}",
+        "Type a message to the facilitator.",
+        "/close — finish & synthesize"
+        " | /exit — quit",
+    ]:
+        _append_facilitator_room(f"{M_DIM} {_ln}")
+    app.invalidate()
+
+
+async def _do_start_chain(
+    app, names, initial_task, checkpoint
+):
+    """Spawn named agents and open the Chain Room tab.
+
+    Spawns each agent, creates the Chain instance via
+    pool.chain(), opens the room buffer, prints
+    welcome lines (C10), and fires the first stage.
+
+    Args:
+        app: The prompt_toolkit Application.
+        names: list[str] of agent names in order.
+              The chain runs agents in THIS order.
+        initial_task: str — input for stage 0.
+        checkpoint: bool — pause after each stage.
+    """
+    global _chain, _chain_room_buf
+    global _chain_checkpoint, _chain_stage_idx
+    global _chain_running, _chain_auto_closed
+    global _active_registry
+    if _active_registry is None:
+        from starry_lib.agents.active_registry\
+            import ActiveRegistry
+        _active_registry = ActiveRegistry()
+        _init_agent_tools()
+
+    for name in names:
+        try:
+            if not _active_registry.is_active(name):
+                await _active_registry.spawn_agent(
+                    name,
+                    _da_pool,
+                    _da_settings,
+                )
+        except Exception as exc:
+            append_text(
+                build_error_frame(
+                    f"Cannot spawn '{name}': {exc}"
+                )
+            )
+            app.invalidate()
+            return
+
+    agents = [
+        (name, f"agent-{name}") for name in names
+    ]
+    _chain = _da_pool.chain(agents)
+    _chain_checkpoint = checkpoint
+    _chain_stage_idx = 0
+    _chain_running = False
+    _chain_auto_closed = False
+
+    _chain_room_buf = _spawn_chain_bufs(app, names)
+    joined = ", ".join(names)
+    cp_hint = "on" if checkpoint else "off"
+    for _ln in [
+        f"Chain started — stages: {joined}",
+        f"Checkpoint mode: {cp_hint}",
+        f"Initial task: {initial_task}",
+        "/close — finish & synthesize"
+        " | /exit — quit",
+    ]:
+        _append_chain_room(f"{M_DIM} {_ln}")
+    app.invalidate()
+    asyncio.ensure_future(
+        handle_chain_stage(app, 0, initial_task)
     )
 
 
@@ -10535,14 +11898,16 @@ def setup_input_handler(app):
         # ── Roundtable routing ────────────
         global _roundtable, _rt_room_buf
         if _roundtable is not None:
-            if text.lower() == "/close":
-                _roundtable = None
-                _rt_room_buf = None
-                _team_agent_colors.clear()
-                global _team_color_next
-                _team_color_next = 0
-                tab_mgr.goto_tab(0)
-                app.invalidate()
+            tl = text.lower()
+            if tl == "/close":
+                _run_roundtable_synthesis(app)
+                return
+            if tl == "/exit":
+                _teardown_roundtable(app)
+                async def _rtexit():
+                    await asyncio.sleep(0.3)
+                    app.exit()
+                asyncio.ensure_future(_rtexit())
                 return
             target = None
             msg = text
@@ -10575,12 +11940,7 @@ def setup_input_handler(app):
         if _debate is not None:
             tl = text.lower()
             if tl in ("/close", "/exit"):
-                _debate = None
-                _debate_room_buf = None
-                _team_agent_colors.clear()
-                _team_color_next = 0
-                tab_mgr.goto_tab(0)
-                app.invalidate()
+                _teardown_debate(app)
                 if tl == "/exit":
                     async def _dexit():
                         await asyncio.sleep(0.3)
@@ -10590,9 +11950,65 @@ def setup_input_handler(app):
             if text:
                 _debate.inject(text)
                 _append_debate_room(
-                    f"{M_DIM} ❯ {text}"
+                    build_user_frame(
+                        text, _exec_mode
+                    )
                 )
                 app.invalidate()
+            return
+
+        # ── Facilitator routing ───────────────────
+        global _facilitator, _facilitator_room_buf
+        if _facilitator is not None:
+            tl = text.lower()
+            if tl == "/close":
+                _run_facilitator_synthesis(app)
+                return
+            if tl == "/exit":
+                _teardown_facilitator(app)
+                async def _fexit():
+                    await asyncio.sleep(0.3)
+                    app.exit()
+                asyncio.ensure_future(_fexit())
+                return
+            if text:
+                asyncio.ensure_future(
+                    handle_facilitator_response(
+                        app, text
+                    )
+                )
+            return
+
+        # ── Chain routing ─────────────────────────
+        global _chain, _chain_room_buf
+        global _chain_running, _chain_auto_closed
+        if _chain is not None:
+            tl = text.lower()
+            if tl == "/close":
+                if _chain_auto_closed:
+                    _teardown_chain(app)
+                else:
+                    _run_chain_synthesis(app)
+                return
+            if tl == "/exit":
+                _teardown_chain(app)
+                async def _cexit():
+                    await asyncio.sleep(0.3)
+                    app.exit()
+                asyncio.ensure_future(_cexit())
+                return
+            if _chain_running:
+                _append_chain_room(
+                    f"{M_DIM} Chain in progress…"
+                )
+                app.invalidate()
+            elif text:
+                _chain_auto_closed = False
+                asyncio.ensure_future(
+                    handle_chain_stage(
+                        app, 0, text
+                    )
+                )
             return
 
         # ── Agent session routing ──────────
@@ -10674,9 +12090,9 @@ def setup_input_handler(app):
             app.invalidate()
             _TEAM_OPTIONS = [
                 "A. Roundtable",
-                "B. Facilitator (soon)",
+                "B. Facilitator",
                 "C. Structured Debate",
-                "D. Collaborative Chain (soon)",
+                "D. Collaborative Chain",
             ]
 
             def _on_team_select(idx):
@@ -10859,13 +12275,247 @@ def setup_input_handler(app):
                         refocus=input_area,
                         max_visible=8,
                     )
-                else:
-                    append_text(
-                        build_warn_frame(
-                            "Not yet implemented."
+                elif idx == 1:
+                    # ── Facilitator ────────────────
+                    if (
+                        _da_settings is None
+                        or _da_pool is None
+                    ):
+                        append_text(
+                            build_error_frame(
+                                "Session not ready."
+                            )
                         )
+                        app.invalidate()
+                        return
+                    from starry_lib.agents\
+                        .agent_store import list_agents
+                    agent_cfgs = list_agents()
+                    if len(agent_cfgs) < 2:
+                        append_text(
+                            build_warn_frame(
+                                "Need at least"
+                                " 2 agents."
+                                " Use /agent →"
+                                " Create first."
+                            )
+                        )
+                        app.invalidate()
+                        return
+                    all_names = [
+                        cfg.name
+                        for cfg in agent_cfgs
+                    ]
+
+                    def _on_fac_pick(fac_idx):
+                        fac_name = (
+                            all_names[fac_idx]
+                        )
+                        remaining = [
+                            n for i, n
+                            in enumerate(all_names)
+                            if i != fac_idx
+                        ]
+
+                        def _on_specs(indices):
+                            if not indices:
+                                append_text(
+                                    build_warn_frame(
+                                        "Select at"
+                                        " least 1"
+                                        " specialist."
+                                    )
+                                )
+                                app.invalidate()
+                                return
+                            specs = [
+                                remaining[i]
+                                for i in indices
+                            ]
+
+                            def _on_transparent(
+                                bidx
+                            ):
+                                transparent = (
+                                    bidx == 0
+                                )
+                                asyncio\
+                                    .ensure_future(
+                                    _do_start_facilitator(
+                                        app,
+                                        fac_name,
+                                        specs,
+                                        transparent,
+                                    )
+                                )
+
+                            _dlg.show_button_dialog(
+                                app,
+                                title=(
+                                    "Facilitator"
+                                    " — Transparent"
+                                    " mode?"
+                                ),
+                                message=(
+                                    "Show tool"
+                                    " call traffic"
+                                    " in room?"
+                                ),
+                                buttons=[
+                                    "Yes",
+                                    "No",
+                                ],
+                                on_button=(
+                                    _on_transparent
+                                ),
+                                refocus=input_area,
+                            )
+
+                        _dlg.show_toggle_dialog(
+                            app,
+                            title=(
+                                "Facilitator"
+                                " — Select"
+                                " Specialists"
+                            ),
+                            items=remaining,
+                            on_confirm=_on_specs,
+                            refocus=input_area,
+                            max_visible=8,
+                        )
+
+                    _dlg.show_menu_dialog(
+                        app,
+                        title=(
+                            "Facilitator"
+                            " — Select Facilitator"
+                        ),
+                        options=all_names,
+                        on_select=_on_fac_pick,
+                        refocus=input_area,
                     )
-                    app.invalidate()
+                elif idx == 3:
+                    # ── Collaborative Chain ────────
+                    if (
+                        _da_settings is None
+                        or _da_pool is None
+                    ):
+                        append_text(
+                            build_error_frame(
+                                "Session not ready."
+                            )
+                        )
+                        app.invalidate()
+                        return
+                    from starry_lib.agents\
+                        .agent_store import list_agents
+                    agent_cfgs = list_agents()
+                    if len(agent_cfgs) < 2:
+                        append_text(
+                            build_warn_frame(
+                                "Need at least"
+                                " 2 agents."
+                                " Use /agent →"
+                                " Create first."
+                            )
+                        )
+                        app.invalidate()
+                        return
+                    chain_names = [
+                        cfg.name
+                        for cfg in agent_cfgs
+                    ]
+
+                    def _on_chain_agents(indices):
+                        if len(indices) < 2:
+                            append_text(
+                                build_warn_frame(
+                                    "Select at least"
+                                    " 2 agents."
+                                )
+                            )
+                            app.invalidate()
+                            return
+                        chosen = [
+                            chain_names[i]
+                            for i in indices
+                        ]
+
+                        def _on_task(task_text):
+                            if not task_text\
+                                    .strip():
+                                append_text(
+                                    build_warn_frame(
+                                        "Task cannot"
+                                        " be empty."
+                                    )
+                                )
+                                app.invalidate()
+                                return
+
+                            def _on_checkpoint(
+                                bidx
+                            ):
+                                checkpoint = (
+                                    bidx == 0
+                                )
+                                asyncio\
+                                    .ensure_future(
+                                    _do_start_chain(
+                                        app,
+                                        chosen,
+                                        task_text
+                                        .strip(),
+                                        checkpoint,
+                                    )
+                                )
+
+                            _dlg.show_button_dialog(
+                                app,
+                                title=(
+                                    "Chain"
+                                    " — Checkpoint"
+                                    " mode?"
+                                ),
+                                message=(
+                                    "Pause after"
+                                    " each stage?"
+                                ),
+                                buttons=[
+                                    "Yes",
+                                    "No",
+                                ],
+                                on_button=(
+                                    _on_checkpoint
+                                ),
+                                refocus=input_area,
+                            )
+
+                        _dlg.show_input_dialog(
+                            app,
+                            title=(
+                                "Chain"
+                                " — Initial Task"
+                            ),
+                            label=(
+                                "Enter the task"
+                                " for the chain:"
+                            ),
+                            on_confirm=_on_task,
+                            refocus=input_area,
+                        )
+
+                    _dlg.show_toggle_dialog(
+                        app,
+                        title=(
+                            "Chain — Select Agents"
+                            "\n(order = list order)"
+                        ),
+                        items=chain_names,
+                        on_confirm=_on_chain_agents,
+                        refocus=input_area,
+                        max_visible=8,
+                    )
 
             _dlg.show_menu_dialog(
                 app,

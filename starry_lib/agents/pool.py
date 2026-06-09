@@ -26,7 +26,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pydantic import BaseModel
 
+from starry_lib.agents.chain import Chain
 from starry_lib.agents.debate import Debate
+from starry_lib.agents.facilitator import Facilitator
 from starry_lib.agents.roles import build_agent
 from starry_lib.agents.session import Session
 from starry_lib.config.settings import AppSettings, ProviderConfig
@@ -469,6 +471,74 @@ class AgentPool:
             topic=topic,
             rounds=rounds,
         )
+
+    def facilitator(
+        self,
+        facilitator_name: str,
+        facilitator_sid: str,
+        specialist_names: list[str],
+    ) -> Facilitator:
+        """Create a Facilitator instance.
+
+        Validates that facilitator_sid is registered.
+        Does NOT start anything — just creates the
+        Facilitator object.
+
+        Args:
+            facilitator_name: Display name for the
+                coordinator agent.
+            facilitator_sid: Registered session ID,
+                e.g. 'agent-coordinator'.
+            specialist_names: Display names of
+                specialist agents (they must already
+                be spawned before calling this).
+
+        Raises:
+            KeyError: if facilitator_sid not found.
+
+        Returns:
+            A Facilitator instance ready to use.
+        """
+        if facilitator_sid not in self._sessions:
+            raise KeyError(
+                f"Session '{facilitator_sid}'"
+                " not found."
+            )
+        return Facilitator(
+            pool=self,
+            facilitator_name=facilitator_name,
+            facilitator_sid=facilitator_sid,
+            specialist_names=specialist_names,
+        )
+
+    def chain(
+        self,
+        agents: list[tuple[str, str]],
+    ) -> Chain:
+        """Create a Chain instance.
+
+        Validates all session_ids are registered.
+        Does NOT start anything — just creates the
+        Chain object.
+
+        Args:
+            agents: Ordered list of (name, session_id)
+                pairs. All session_ids must already
+                be registered in this pool.
+
+        Raises:
+            KeyError: if any session_id is not found.
+
+        Returns:
+            A Chain instance ready to use.
+        """
+        for name, sid in agents:
+            if sid not in self._sessions:
+                raise KeyError(
+                    f"Session '{sid}' for agent"
+                    f" '{name}' is not registered."
+                )
+        return Chain(pool=self, agents=agents)
 
     # ── Multi-agent routing ───────────────────────────────────
 

@@ -67,6 +67,11 @@ class Roundtable:
         return list(self._session_map.values())
 
     @property
+    def session_map(self) -> dict[str, str]:
+        """Mapping of agent name → session_id."""
+        return dict(self._session_map)
+
+    @property
     def transcript(self) -> list[dict[str, str]]:
         """Return the full shared transcript."""
         return self._transcript
@@ -92,6 +97,46 @@ class Roundtable:
         self._transcript.append(
             {"name": name, "text": text}
         )
+
+    def inject_seed(self, seed: str) -> None:
+        """Inject a system message into every session."""
+        for sid in self._session_map.values():
+            session = self._pool.get(sid)
+            session.inject_system_message(seed)
+
+    async def summarize_positions(
+        self,
+    ) -> dict[str, str]:
+        """Ask each agent to summarise their stance.
+
+        Concurrent chat_complete() calls. Returns
+        {name: summary_text}. Does not touch transcript.
+        """
+        import asyncio
+        prompt = (
+            "In 2-3 sentences, summarize your"
+            " main points and position from"
+            " this conversation. Be concise."
+        )
+
+        async def _one(name, sid):
+            session = self._pool.get(sid)
+            try:
+                text = await session.chat_complete(
+                    prompt
+                )
+            except Exception:
+                text = ""
+            return name, text
+
+        results = await asyncio.gather(
+            *[
+                _one(name, sid)
+                for name, sid
+                in self._session_map.items()
+            ]
+        )
+        return dict(results)
 
     def format_context(
         self, limit: int = 10
@@ -142,6 +187,9 @@ class Roundtable:
             )
         else:
             prompt = user_text
+        prompt += (
+            "\nReply in 3-5 sentences maximum."
+        )
 
         if target_name is not None:
             sid = self._session_map.get(
