@@ -52,8 +52,11 @@ pytest tests/smoke/ -v          # smoke tests also need real APIs
 # Run a single test file
 pytest tests/unit/test_tools.py -v
 
-# Run tests that require real API keys
+# Run tests that require real API keys (pytest marker: live)
 pytest -m live
+
+# Run slow tests (pytest marker: slow; takes >2 seconds)
+pytest -m slow
 
 # Lint / format
 ruff check . && ruff format .
@@ -81,6 +84,10 @@ bash install.sh --uninstall
 | `agents/agent_config.py` | `AgentConfig` dataclass — named agent persistence record (pure data, no runtime logic) |
 | `agents/agent_store.py` | CRUD for `~/.local/starry/conf/agents/`; `list_agents()`, `get_agent()`, `save_agent()`, `delete_agent()` |
 | `agents/active_registry.py` | `ActiveRegistry` — maps agent name → `session_id`; holds per-agent `asyncio.Lock` |
+| `agents/roundtable.py` | Shared chat room — broadcasts user messages to all agents; `@name` targets one agent; `inject_seed()` primes each agent's context |
+| `agents/debate.py` | Turn-based round-robin debate engine; agents speak in order for a fixed number of rounds; `inject()` inserts messages between turns |
+| `agents/facilitator.py` | Coordinator pattern — one session uses `chat_auto()` + `call_agent` to route subtasks to specialist agents |
+| `agents/chain.py` | Sequential pipeline — TUI calls `get_session(idx)` per stage and `record_stage()` after each; no `run()` method (TUI drives it to enable checkpoint menus between stages) |
 | `commands/store.py` | CRUD for user-defined custom commands; global file `~/.local/starry/conf/commands.json`; project file `.starry/commands.json` overrides by name |
 | `tools/` | Tool schemas + executors; implementations live in `tools/implementations/` |
 | `tools/tool_loader.py` | `get_tool_schemas(mode)` / `get_tool_executor(mode)`; `wrap_with_cache()` caches read-only tool results and invalidates on writes |
@@ -281,6 +288,12 @@ Single ~9 500-line file. Key landmarks for navigation:
 |---------|-------------|
 | `/setup` | Configure providers, models, tools, themes |
 | `/agent` | Create, list, edit, chat with named agents (8 sub-options) |
+| `/team` | Launch multi-agent collaboration: A. Roundtable, B. Facilitator, C. Structured Debate, D. Collaborative Chain — requires ≥2 named agents created via `/agent` |
+| `/tools` | Toggle individual tools on/off for the current session |
+| `/skills` | Toggle native skills on/off for the current session |
+| `/init` | Generate `AGENTS.md` from current agent configs in `cwd` |
+| `/close` | Pop the current agent/team session from `session_stack`; owned sessions kill the agent |
+| `/buffer` | Open a named buffer as a tab, or close an open tab |
 | `/mode` | Toggle Plan/Research ↔ Execution |
 | `/role` | Switch active agent role |
 | `/provider` | Switch active LLM provider |
