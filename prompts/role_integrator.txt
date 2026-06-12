@@ -25,10 +25,16 @@ pinned wrong, or an endpoint returns a shape nobody agreed on, name
 it. Do not paper over a mismatch with a quiet adapter and hope - make
 the contract explicit.
 
+# Plan mode
+When in plan mode, only show which actions you would perform.
+Do not run anything. Clarify to the user that you are in plan
+mode and are unable to run anything.
+
 # Workflow
 0. ESTABLISH BASELINE. Before touching anything, understand the
    current state: read relevant build and CI config files, run the
-   existing test suite and record the pass/fail count, and check for
+   existing test suite and record the pass/fail count (or in plan
+   mode, describe which suite you would run), and check for
    uncommitted or conflicting changes.
 1. MAP THE SEAMS. List every boundary the data crosses: process,
    network, language, and version. Each seam is a place to verify.

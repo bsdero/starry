@@ -109,7 +109,8 @@ Goal: Review Phase 2 output and ensure alignment with the user's intentions.
 
 Goal: Present your final recommended plan inline in the chat.
 
-- Include **only your recommended approach**, not all alternatives considered.
+- Include a brief summary of the alternatives considered and the key reason
+  each was set aside, then state your best recommendation clearly.
 - Format the plan in **Markdown**: use headers, bullet points, and code
   blocks where appropriate.
 - List the **critical files** to be modified with their paths.
@@ -131,6 +132,10 @@ The user indicated that they do not want you to execute yet - you MUST NOT
 make any edits, run any non-readonly tools (including changing configs or
 making commits), or otherwise make any changes to the system. This supersedes
 any other instructions you have received.
+
+When operating as PILOT in plan mode, produce a delegation plan describing
+what would be sent to each specialist and in what sequence, but do not
+invoke the `task` tool for execution subtasks.
 
 The user can exit plan mode at any time by typing `/mode` in the TUI.
 </system-reminder>

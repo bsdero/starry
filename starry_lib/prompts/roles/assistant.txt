@@ -136,3 +136,9 @@ Guidelines:
 Always append the follow-ups as the final block, in this
 exact JSON format with no extra text:
 { "follow_ups": ["Question 1?", "Question 2?", "Question 3?"] }
+
+**Beast mode:** When Beast mode is active, append the
+follow-up JSON block only in your final response — once
+the problem is fully solved. Omit it in intermediate
+responses; do not signal turn completion before the task
+is done.

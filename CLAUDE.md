@@ -95,7 +95,7 @@ bash install.sh --uninstall
 | `tools/registry.py` | MCP via the `openai-agents` SDK — requires Python 3.12+; emits `RuntimeWarning` on 3.11 |
 | `tools/skill_loader.py` | Auto-discovers `starry_lib/skills/*/`; `load_skills()` returns cached `SkillTool` list |
 | `skills/` | Auto-discovered native skills (each is a subdirectory with `descriptor.json` + `skill.py`) |
-| `prompts/loader.py` | Loads system prompt text files from `starry_lib/prompts/` and the repo-root `prompts/` directory |
+| `prompts/loader.py` | `load_plan_prompt()`, `load_deep_prompt()`, `load_role_prompt(name)` — each checks `~/.local/starry/prompts/` first (user override), then falls back to bundled `starry_lib/prompts/`; role prompts live in `roles/<name>.txt` |
 | `sessions/store.py` | JSON persistence under `~/.local/starry/conf/sessions/<id>/session.json` |
 | `observability/trace.py` | Per-session `Tracer`; exports NDJSON |
 | `context/world_state.py` | `build_world_state()` — regenerated per turn (date, cwd, git, OS) |
@@ -270,17 +270,17 @@ Available event hooks: `on_session_start`, `on_session_end`, `on_tool_call`,
 
 ### TUI (`starry_cli/main.py`)
 
-Single ~9 500-line file. Key landmarks for navigation:
+Single ~14 300-line file. Key landmarks for navigation:
 
 | Symbol | Line | Notes |
 |--------|------|-------|
-| `build_user_frame()` | ~1812 | Renders the user's input as a scroll-buffer frame |
-| `build_inline_notif()` | ~1942 | Info/status line in the scroll buffer |
-| `build_error_frame()` | ~2045 | Error display in the scroll buffer |
-| `make_welcome()` | ~2724 | Generates the welcome banner |
-| `handle_ai_response()` | ~3222 | Main streaming + tool-loop coroutine |
-| `setup_input_handler()` / `accept_handler()` | ~9579 | All command dispatch lives here |
-| `_ALL_COMMANDS` | ~9648 | List for 4+-char prefix auto-expansion |
+| `build_user_frame()` | ~1975 | Renders the user's input as a scroll-buffer frame |
+| `build_inline_notif()` | ~2106 | Info/status line in the scroll buffer |
+| `build_error_frame()` | ~2279 | Error display in the scroll buffer |
+| `make_welcome()` | ~3038 | Generates the welcome banner |
+| `handle_ai_response()` | ~5079 | Main streaming + tool-loop coroutine |
+| `setup_input_handler()` / `accept_handler()` | ~11873 | All command dispatch lives here |
+| `_ALL_COMMANDS` | ~12058 | List for 4+-char prefix auto-expansion |
 
 **TUI commands** (unambiguous 4+-char prefixes are auto-expanded):
 
@@ -324,8 +324,8 @@ Single ~9 500-line file. Key landmarks for navigation:
 | `/exit` | Exit the TUI |
 
 **Adding a new built-in TUI command** requires updates in four places:
-1. Handler block in `accept_handler()` (~line 9582)
-2. `_ALL_COMMANDS` list (~line 9648) for prefix auto-expansion
+1. Handler block in `accept_handler()` (~line 11876)
+2. `_ALL_COMMANDS` list (~line 12058) for prefix auto-expansion
 3. `/help` text builder
 4. `_BUILTIN_NAMES` frozenset in `starry_lib/commands/store.py`
 

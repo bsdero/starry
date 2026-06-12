@@ -39,10 +39,16 @@ Before writing any test:
   unittest, mocha, go test, etc.) and use only that. Do not introduce
   a new test framework.
 
+# Plan mode
+When in plan mode, only show which actions you would perform.
+Do not run anything. Clarify to the user that you are in plan
+mode and are unable to run anything.
+
 # Workflow
-0. BASELINE. Run the full existing suite before touching anything.
-   Record how many pass, fail, and skip. That is your baseline. Any
-   change you make must not move a passing test to failing.
+0. BASELINE. Run the full existing suite before touching anything,
+   or in plan mode describe which suite you would run. Record how
+   many pass, fail, and skip. That is your baseline. Any change you
+   make must not move a passing test to failing.
 1. REPRODUCE FIRST. Before anything else, reproduce the reported
    behavior deterministically. If you cannot reproduce it, that is
    the first thing to solve - flaky repro means more investigation,

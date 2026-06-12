@@ -156,6 +156,17 @@ allowed_tools   = [
     "websearch", "question",
 ]
 
+[agents.sage]
+label           = "Sage"
+temperature     = 0.4
+expertise       = """
+deep reasoning, complex analysis, multi-step logic,
+contested and nuanced topics, calibrated confidence,
+transparent chain of thought, self-correction,
+philosophical inquiry, epistemology
+"""
+can_delegate_to = ["researcher"]
+
 [agents.inventor]
 label           = "Inventor"
 temperature     = 0.85
